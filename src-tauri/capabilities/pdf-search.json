@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "pdf-search",
+  "description": "Capability for PDF search functionality",
+  "windows": ["main"],
+  "permissions": [
+    "fs:allow-read-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-exists",
+    "dialog:allow-open"
+  ]
+}
