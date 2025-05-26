@@ -17,7 +17,8 @@
     "@tauri-apps/plugin-dialog": "^2.2.2",
     "@tauri-apps/plugin-fs": "^2.3.0",
     "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-shell": "^2"
+    "@tauri-apps/plugin-shell": "^2",
+    "pdfjs-dist": "^5.2.133"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

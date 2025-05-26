@@ -29,4 +29,9 @@ export default defineConfig(async () => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  // 支持PDF.js worker
+  optimizeDeps: {
+    include: ["pdfjs-dist"],
+  },
+  assetsInclude: ["**/*.pdf"],
 }));

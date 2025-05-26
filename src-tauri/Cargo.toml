@@ -32,3 +32,7 @@ tokio = { version = "1", features = ["full"] }
 rayon = "1.7"
 indicatif = "0.17"
 lazy_static = "1.4"
+lopdf = "0.32"
+open = "5.0"
+pdf = "0.8"
+base64 = "0.22"

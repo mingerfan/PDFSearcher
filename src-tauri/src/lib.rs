@@ -8,12 +8,14 @@ use std::path::Path;
 use tauri::Emitter;
 use std::collections::HashMap;
 use std::sync::RwLock;
+use base64::{Engine as _, engine::general_purpose};
 
 #[derive(Debug, Serialize, Clone)]
 struct SearchResult {
     file_path: String,
     matched_text: String,
     file_size: u64,
+    page_number: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -27,6 +29,20 @@ struct SearchProgress {
     current: usize,
     total: usize,
     current_file: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct PdfPageInfo {
+    page_number: u32,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+struct PdfViewerData {
+    file_path: String,
+    total_pages: u32,
+    current_page: u32,
+    page_content: String,
 }
 
 // 添加原来的 search_in_pdf 函数以支持向后兼容
@@ -54,9 +70,9 @@ fn search_in_pdf(file_path: &str, keyword: &str) -> Result<Option<SearchResult>>
                 let start = if i > 0 { i - 1 } else { 0 };
                 let end = if i + 1 < lines.len() { i + 2 } else { lines.len() };
                 
-                for j in start..end {
-                    if !context_lines.contains(&lines[j]) {
-                        context_lines.push(lines[j]);
+                for line_in_context in &lines[start..end] {
+                    if !context_lines.contains(line_in_context) {
+                        context_lines.push(*line_in_context);
                     }
                 }
                 break; // 只获取第一个匹配的上下文
@@ -70,10 +86,15 @@ fn search_in_pdf(file_path: &str, keyword: &str) -> Result<Option<SearchResult>>
             context
         };
 
+        // 尝试找到页码 - 使用精确检测
+        let page_number = find_exact_page_number(file_path, &keyword)
+            .or_else(|| estimate_page_number(&text, &context));
+
         Ok(Some(SearchResult {
             file_path: file_path.to_string(),
             matched_text: context,
             file_size,
+            page_number,
         }))
     } else {
         Ok(None)
@@ -138,9 +159,9 @@ fn quick_search_in_pdf(file_path: &str, keywords: &[String]) -> Result<Option<Se
                 let start = if i >= 2 { i - 2 } else { 0 };
                 let end = if i + 3 < lines.len() { i + 3 } else { lines.len() };
                 
-                for j in start..end {
-                    if !context_lines.contains(&lines[j]) {
-                        context_lines.push(lines[j]);
+                for line_in_context in &lines[start..end] {
+                    if !context_lines.contains(line_in_context) {
+                        context_lines.push(*line_in_context);
                     }
                 }
                 
@@ -152,15 +173,21 @@ fn quick_search_in_pdf(file_path: &str, keywords: &[String]) -> Result<Option<Se
         
         let context = context_lines.join("\n").trim().to_string();
         let context = if context.len() > 300 {
-            format!("{}...", &context[..300])
+            format!("{}...", context.chars().take(150).collect::<String>())
         } else {
             context
         };
+
+        // 尝试找到页码 - 使用精确检测
+        let page_number = found_keywords.iter()
+            .find_map(|keyword| find_exact_page_number(file_path, keyword))
+            .or_else(|| estimate_page_number(&text, &context));
 
         Ok(Some(SearchResult {
             file_path: file_path.to_string(),
             matched_text: context,
             file_size,
+            page_number,
         }))
     } else {
         Ok(None)
@@ -181,7 +208,7 @@ async fn search_pdfs(
         .filter_map(|e| e.ok())
         .filter(|entry| {
             let path = entry.path();
-            path.is_file() && path.extension().map_or(false, |ext| ext == "pdf")
+            path.is_file() && path.extension().is_some_and(|ext| ext == "pdf")
         })
         .map(|entry| entry.path().to_string_lossy().to_string())
         .collect();
@@ -248,7 +275,7 @@ async fn search_pdfs_advanced(
         .filter_map(|e| e.ok())
         .filter(|entry| {
             let path = entry.path();
-            path.is_file() && path.extension().map_or(false, |ext| ext == "pdf")
+            path.is_file() && path.extension().is_some_and(|ext| ext == "pdf")
         })
         .map(|entry| entry.path().to_string_lossy().to_string())
         .collect();
@@ -318,6 +345,171 @@ async fn select_folder(app_handle: tauri::AppHandle) -> Result<String, String> {
     }
 }
 
+// 精确的页面检测，使用lopdf按页提取文本
+fn find_exact_page_number(file_path: &str, search_text: &str) -> Option<u32> {
+    use lopdf::Document;
+    
+    if let Ok(doc) = Document::load(file_path) {
+        let pages = doc.get_pages();
+        
+        for (page_num, _) in pages.iter() {
+            if let Ok(content) = doc.extract_text(&[*page_num]) {
+                if content.to_lowercase().contains(&search_text.to_lowercase()) {
+                    return Some(*page_num);
+                }
+            }
+        }
+    }
+    None
+}
+
+// 获取PDF指定页面的内容
+fn get_pdf_page_content(file_path: &str, page_number: u32) -> Result<String> {
+    use lopdf::Document;
+    
+    let doc = Document::load(file_path)?;
+    let content = doc.extract_text(&[page_number])?;
+    Ok(content)
+}
+
+// 获取PDF总页数
+fn get_pdf_page_count(file_path: &str) -> Result<u32> {
+    use lopdf::Document;
+    
+    let doc = Document::load(file_path)?;
+    let pages = doc.get_pages();
+    Ok(pages.len() as u32)
+}
+
+// 简化的页面检测，基于文本行数估算
+fn estimate_page_number(full_text: &str, matched_line: &str) -> Option<u32> {
+    let lines: Vec<&str> = full_text.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        if line.to_lowercase().contains(&matched_line.to_lowercase().trim()) {
+            // 假设每页大约40行文本
+            let estimated_page = (i / 40) + 1;
+            return Some(estimated_page as u32);
+        }
+    }
+    None
+}
+
+// 基于总页数的更精确估算
+fn estimate_page_number_with_total(file_path: &str, matched_text: &str, total_pages: u32) -> Option<u32> {
+    if let Ok(full_text) = extract_text(file_path) {
+        let total_chars = full_text.len();
+        if total_chars == 0 { return None; }
+        
+        // 找到匹配文本的位置
+        let matched_line = matched_text.lines().next().unwrap_or("").trim();
+        if let Some(pos) = full_text.to_lowercase().find(&matched_line.to_lowercase()) {
+            // 基于字符位置估算页码
+            let ratio = pos as f32 / total_chars as f32;
+            let estimated_page = ((ratio * total_pages as f32).ceil() as u32).max(1);
+            return Some(estimated_page.min(total_pages));
+        }
+    }
+    None
+}
+
+// 打开PDF到指定页码的命令
+#[tauri::command]
+async fn open_pdf_at_page(file_path: String, page_number: Option<u32>) -> Result<(), String> {
+    // 使用tauri_plugin_opener来打开文件
+    use tauri_plugin_opener::OpenerExt;
+    
+    // 获取应用句柄 - 这需要从调用上下文中传递
+    // 对于现在，我们使用标准的文件关联打开
+    match std::process::Command::new("cmd")
+        .args(&["/c", "start", "", &file_path])
+        .spawn()
+    {
+        Ok(_) => {
+            if let Some(page) = page_number {
+                eprintln!("PDF已打开，建议导航到第 {} 页", page);
+            }
+            Ok(())
+        },
+        Err(e) => Err(format!("无法打开PDF文件: {}", e)),
+    }
+}
+
+// 获取PDF文件的base64编码用于前端显示
+#[tauri::command]
+async fn get_pdf_base64(file_path: String) -> Result<String, String> {
+    use std::fs;
+    
+    println!("尝试读取PDF文件: {}", file_path);
+    
+    // 检查文件是否存在
+    if !std::path::Path::new(&file_path).exists() {
+        return Err(format!("文件不存在: {}", file_path));
+    }
+    
+    // 检查文件大小
+    let metadata = fs::metadata(&file_path)
+        .map_err(|e| format!("无法获取文件信息: {}", e))?;
+    
+    let file_size = metadata.len();
+    println!("PDF文件大小: {} bytes", file_size);
+    
+    if file_size > 50 * 1024 * 1024 { // 限制50MB
+        return Err("PDF文件过大 (超过50MB)".to_string());
+    }
+    
+    let pdf_data = fs::read(&file_path)
+        .map_err(|e| format!("无法读取PDF文件: {}", e))?;
+    
+    println!("成功读取PDF文件，数据长度: {} bytes", pdf_data.len());
+    
+    let base64_data = general_purpose::STANDARD.encode(&pdf_data);
+    println!("Base64编码完成，长度: {} chars", base64_data.len());
+    
+    Ok(base64_data)
+}
+
+// 获取PDF查看器数据的命令
+#[tauri::command]
+async fn get_pdf_viewer_data(file_path: String, page_number: Option<u32>) -> Result<PdfViewerData, String> {
+    let total_pages = get_pdf_page_count(&file_path)
+        .map_err(|e| format!("无法获取PDF页数: {}", e))?;
+    
+    let current_page = page_number.unwrap_or(1).min(total_pages).max(1);
+    
+    let page_content = get_pdf_page_content(&file_path, current_page)
+        .map_err(|e| format!("无法获取页面内容: {}", e))?;
+    
+    Ok(PdfViewerData {
+        file_path,
+        total_pages,
+        current_page,
+        page_content,
+    })
+}
+
+// 搜索PDF中的文本并返回所有匹配页面
+#[tauri::command]
+async fn search_in_pdf_pages(file_path: String, search_text: String) -> Result<Vec<PdfPageInfo>, String> {
+    let total_pages = get_pdf_page_count(&file_path)
+        .map_err(|e| format!("无法获取PDF页数: {}", e))?;
+    
+    let mut matching_pages = Vec::new();
+    let search_lower = search_text.to_lowercase();
+    
+    for page_num in 1..=total_pages {
+        if let Ok(content) = get_pdf_page_content(&file_path, page_num) {
+            if content.to_lowercase().contains(&search_lower) {
+                matching_pages.push(PdfPageInfo {
+                    page_number: page_num,
+                    content: content.lines().take(10).collect::<Vec<_>>().join("\n"), // 只取前10行作为预览
+                });
+            }
+        }
+    }
+    
+    Ok(matching_pages)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -325,7 +517,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![search_pdfs, select_folder, search_pdfs_advanced])
+        .invoke_handler(tauri::generate_handler![search_pdfs, select_folder, search_pdfs_advanced, open_pdf_at_page, get_pdf_viewer_data, search_in_pdf_pages, get_pdf_base64])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
