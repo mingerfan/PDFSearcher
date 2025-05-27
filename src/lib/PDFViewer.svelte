@@ -1883,29 +1883,7 @@
     background: #cbd5e1;
     border-radius: 4px;
   }
-  .pdf-canvas-container {
-    background: white;
-    border-radius: 12px;
-    padding: 20px;
-    box-shadow: 
-      0 20px 25px -5px rgba(0, 0, 0, 0.1),
-      0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    transition: all 0.3s ease;
-  }
 
-  .pdf-canvas-container:hover {
-    box-shadow: 
-      0 25px 50px -12px rgba(0, 0, 0, 0.15),
-      0 20px 20px -5px rgba(0, 0, 0, 0.06);
-  }
-
-  .pdf-canvas {
-    max-width: 100%;
-    max-height: 100%;
-    display: block;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  }
 
   /* 新的PDF页面容器样式 */
   .pdf-page-container {
@@ -1914,23 +1892,6 @@
     align-items: flex-start;
     padding: 20px;
     min-height: 100%;
-  }
-
-  .pdf-page-wrapper {
-    position: relative;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 
-      0 20px 25px -5px rgba(0, 0, 0, 0.1),
-      0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    transition: all 0.3s ease;
-    overflow: hidden;
-  }
-
-  .pdf-page-wrapper:hover {
-    box-shadow: 
-      0 25px 50px -12px rgba(0, 0, 0, 0.15),
-      0 20px 20px -5px rgba(0, 0, 0, 0.06);
   }
 
   /* 加载和错误状态 */
@@ -2015,46 +1976,9 @@
 
   /* 响应式设计 */
   @media (max-width: 768px) {
-    .pdf-viewer {
-      height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    }
-
-    .pdf-toolbar {
-      padding: 8px 12px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .pdf-toolbar h2 {
-      font-size: 14px;
-      margin-right: 8px;
-    }
-
-    .toolbar-group {
-      gap: 4px;
-    }
-
-    .toolbar-btn {
-      padding: 6px 8px;
-      font-size: 12px;
-      min-width: 32px;
-    }
-
-    .sidebar {
-      width: 280px;
-    }
 
     .pdf-content {
       padding: 12px;
-    }
-
-    .pdf-canvas-container {
-      padding: 12px;
-    }
-
-    .thumbnail-grid {
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-      gap: 8px;
     }
 
     .search-panel, .bookmarks-panel {
