@@ -2,7 +2,11 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  const { filePath, initialPage = 1, onClose } = $props<{ filePath: string; initialPage?: number; onClose: () => void}>();
+  const {
+    filePath,
+    initialPage = 1,
+    onClose,
+  } = $props<{ filePath: string; initialPage?: number; onClose: () => void }>();
   let pdfData = $state<string>("");
   let currentPage = $state(initialPage);
   let totalPages = $state(1);
@@ -10,36 +14,40 @@
   let error = $state("");
   let pdfDoc: any = null;
   let scale = $state(1.2);
-  let fitMode = $state<'width' | 'height' | 'page'>('page');
+  let fitMode = $state<"width" | "height" | "page">("page");
   let userScale = $state(1.2); // 用户手动设置的缩放
   let rotateAngle = $state(0);
-  
+
   // 侧边栏状态
   let showSidebar = $state(true);
-  let sidebarTab = $state<'thumbnails' | 'search' | 'bookmarks'>('thumbnails');
-    // 缩略图状态
-  let thumbnails = $state<Array<{
-    pageNum: number;
-    canvas: HTMLCanvasElement;
-    loaded: boolean;
-    aspectRatio: number;
-  }>>([]);
+  let sidebarTab = $state<"thumbnails" | "search" | "bookmarks">("thumbnails");
+  // 缩略图状态
+  let thumbnails = $state<
+    Array<{
+      pageNum: number;
+      canvas: HTMLCanvasElement;
+      loaded: boolean;
+      aspectRatio: number;
+    }>
+  >([]);
   let thumbnailsContainer = $state<HTMLDivElement>();
-  
+
   // 搜索状态
   let searchText = $state("");
-  let searchResults = $state<Array<{ pageNum: number; matches: number; text: string }>>([]);
+  let searchResults = $state<
+    Array<{ pageNum: number; matches: number; text: string }>
+  >([]);
   let isSearching = $state(false);
-  
+
   // 书签状态
   let bookmarks = $state<Array<{ pageNum: number; label: string }>>([]);
   async function waitForPageContainer(maxAttempts = 10): Promise<boolean> {
     for (let i = 0; i < maxAttempts; i++) {
-      const container = document.getElementById('pdfPageContainer');
+      const container = document.getElementById("pdfPageContainer");
       if (container) {
         return true;
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
     return false;
   }
@@ -62,15 +70,15 @@
       const loadingTask = pdfjsLib.getDocument({ data: bytes });
       pdfDoc = await loadingTask.promise;
       totalPages = pdfDoc.numPages;
-        
+
       loading = false;
-      
+
       const containerReady = await waitForPageContainer();
       if (!containerReady) {
         error = "PDF容器初始化失败";
         return;
       }
-      
+
       await renderPage(currentPage);
       await generateThumbnails();
     } catch (e) {
@@ -78,120 +86,140 @@
       error = `无法加载PDF文件: ${e}`;
       loading = false;
     }
-  });async function generateThumbnails() {
+  });
+  async function generateThumbnails() {
     if (!pdfDoc) return;
-    
+
     thumbnails = [];
-    
+
     // First, get the dimensions of the first page to estimate aspect ratio
-    let defaultAspectRatio = 3/4; // fallback
+    let defaultAspectRatio = 3 / 4; // fallback
     try {
       const firstPage = await pdfDoc.getPage(1);
       const pageRotation = firstPage.rotate || 0;
-      const firstViewport = firstPage.getViewport({ scale: 1, rotation: pageRotation });
+      const firstViewport = firstPage.getViewport({
+        scale: 1,
+        rotation: pageRotation,
+      });
       defaultAspectRatio = firstViewport.width / firstViewport.height;
     } catch (e) {
       console.error("Failed to get default aspect ratio:", e);
     }
-    
+
     // 初始化所有缩略图为未加载状态
     for (let i = 1; i <= totalPages; i++) {
       thumbnails.push({
         pageNum: i,
-        canvas: document.createElement('canvas'),
+        canvas: document.createElement("canvas"),
         loaded: false,
-        aspectRatio: defaultAspectRatio // Use calculated default aspect ratio
+        aspectRatio: defaultAspectRatio, // Use calculated default aspect ratio
       });
     }
-    
+
     // 首先生成前10页的缩略图，确保快速显示
     const initialBatch = Math.min(totalPages, 10);
     for (let i = 1; i <= initialBatch; i++) {
       await generateSingleThumbnail(i - 1);
     }
-    
+
     // 后台继续生成第11-50页的缩略图
     if (totalPages > initialBatch) {
       setTimeout(async () => {
-        await generateRemainingThumbnails(initialBatch, Math.min(50, totalPages));
+        await generateRemainingThumbnails(
+          initialBatch,
+          Math.min(50, totalPages),
+        );
       }, 100);
     }
-  }async function generateSingleThumbnail(index: number) {
+  }
+  async function generateSingleThumbnail(index: number) {
     if (!pdfDoc || !thumbnails[index] || thumbnails[index].loaded) return;
-    
+
     try {
       const pageNum = thumbnails[index].pageNum;
       const page = await pdfDoc.getPage(pageNum);
-      
+
       // Get the page's natural rotation and viewport
       const pageRotation = page.rotate || 0;
-      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
-      
+      const baseViewport = page.getViewport({
+        scale: 1,
+        rotation: pageRotation,
+      });
+
       // Calculate proper thumbnail scale - aim for max 200px width or height
       const maxDimension = 200;
       const thumbnailScale = Math.min(
         maxDimension / baseViewport.width,
-        maxDimension / baseViewport.height
+        maxDimension / baseViewport.height,
       );
-      
+
       // Get viewport with proper scale and correct rotation
-      const viewport = page.getViewport({ 
+      const viewport = page.getViewport({
         scale: thumbnailScale,
-        rotation: (pageRotation + rotateAngle) % 360  // 合并页面原始旋转和当前旋转角度
+        rotation: (pageRotation + rotateAngle) % 360, // 合并页面原始旋转和当前旋转角度
       });
-      
+
       const canvas = thumbnails[index].canvas;
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      
-      const context = canvas.getContext('2d');
+
+      const context = canvas.getContext("2d");
       if (context) {
         // Clear canvas
         context.clearRect(0, 0, canvas.width, canvas.height);
-        
+
         // Set white background
-        context.fillStyle = '#ffffff';
+        context.fillStyle = "#ffffff";
         context.fillRect(0, 0, canvas.width, canvas.height);
-        
+
         // Set high quality rendering
         context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = 'high';
-        
+        context.imageSmoothingQuality = "high";
+
         // Render the page
         await page.render({
           canvasContext: context,
           viewport: viewport,
         }).promise;
       }
-      
+
       // Calculate aspect ratio based on rendered dimensions
       thumbnails[index].loaded = true;
       thumbnails[index].aspectRatio = viewport.width / viewport.height;
-      
+
       // 触发响应式更新
       thumbnails = [...thumbnails];
     } catch (e) {
-      console.error(`Failed to generate thumbnail for page ${thumbnails[index].pageNum}:`, e);
+      console.error(
+        `Failed to generate thumbnail for page ${thumbnails[index].pageNum}:`,
+        e,
+      );
     }
   }
-  async function generateRemainingThumbnails(startIndex: number, endIndex?: number) {
+  async function generateRemainingThumbnails(
+    startIndex: number,
+    endIndex?: number,
+  ) {
     if (!pdfDoc) return;
-    
-    const end = endIndex !== undefined ? Math.min(endIndex, thumbnails.length) : thumbnails.length;
-    
+
+    const end =
+      endIndex !== undefined
+        ? Math.min(endIndex, thumbnails.length)
+        : thumbnails.length;
+
     // 分批生成剩余缩略图，避免阻塞UI
     const batchSize = 5;
     for (let i = startIndex; i < end; i += batchSize) {
       const batch = [];
-      
+
       for (let j = i; j < Math.min(i + batchSize, end); j++) {
         batch.push(generateSingleThumbnail(j));
       }
-      
+
       await Promise.all(batch);
-      
+
       // 每批次之间短暂延迟，保持UI响应
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
@@ -199,89 +227,99 @@
   async function loadThumbnailOnDemand(index: number) {
     if (!thumbnails[index] || thumbnails[index].loaded) return;
     await generateSingleThumbnail(index);
-  }  async function renderPage(pageNum: number) {
+  }
+  async function renderPage(pageNum: number) {
     if (!pdfDoc) return;
 
     try {
       const page = await pdfDoc.getPage(pageNum);
       let finalScale = userScale;
-      
+
       // 获取页面容器
-      const pageContainer = document.getElementById('pdfPageContainer');
+      const pageContainer = document.getElementById("pdfPageContainer");
       if (!pageContainer) return;
-      
+
       // 根据适配模式计算最终的缩放比例
-      if (fitMode === 'width') {
+      if (fitMode === "width") {
         const containerWidth = pageContainer.clientWidth - 40;
-        const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
+        const baseViewport = page.getViewport({
+          scale: 1,
+          rotation: rotateAngle,
+        });
         finalScale = containerWidth / baseViewport.width;
-      } else if (fitMode === 'height') {
+      } else if (fitMode === "height") {
         const containerHeight = pageContainer.clientHeight - 40;
-        const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
+        const baseViewport = page.getViewport({
+          scale: 1,
+          rotation: rotateAngle,
+        });
         finalScale = containerHeight / baseViewport.height;
       }
-      
+
       // 更新显示的scale值
       scale = finalScale;
-      const viewport = page.getViewport({ scale: finalScale, rotation: rotateAngle });
-      
+      const viewport = page.getViewport({
+        scale: finalScale,
+        rotation: rotateAngle,
+      });
+
       // 清空现有内容
-      pageContainer.innerHTML = '';
-      
+      pageContainer.innerHTML = "";
+
       // 创建页面包装器
-      const pageWrapper = document.createElement('div');
-      pageWrapper.className = 'pdf-page-wrapper';
-      pageWrapper.style.position = 'relative';
+      const pageWrapper = document.createElement("div");
+      pageWrapper.className = "pdf-page-wrapper";
+      pageWrapper.style.position = "relative";
       pageWrapper.style.width = `${viewport.width}px`;
       pageWrapper.style.height = `${viewport.height}px`;
-      pageWrapper.style.background = 'white';
-      pageWrapper.style.borderRadius = '8px';
-      pageWrapper.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
-      pageWrapper.style.overflow = 'hidden';
-        // 创建Canvas层（用于渲染PDF的视觉内容）
-      const canvas = document.createElement('canvas');
+      pageWrapper.style.background = "white";
+      pageWrapper.style.borderRadius = "8px";
+      pageWrapper.style.boxShadow = "0 4px 6px rgba(0, 0, 0, 0.1)";
+      pageWrapper.style.overflow = "hidden";
+      // 创建Canvas层（用于渲染PDF的视觉内容）
+      const canvas = document.createElement("canvas");
       const devicePixelRatio = window.devicePixelRatio || 1;
-      
+
       // 设置高分辨率渲染
       canvas.width = viewport.width * devicePixelRatio;
       canvas.height = viewport.height * devicePixelRatio;
-      canvas.style.position = 'absolute';
-      canvas.style.top = '0';
-      canvas.style.left = '0';
+      canvas.style.position = "absolute";
+      canvas.style.top = "0";
+      canvas.style.left = "0";
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      canvas.style.zIndex = '1';
-      
+      canvas.style.zIndex = "1";
+
       // 创建文本层容器
-      const textLayerDiv = document.createElement('div');
-      textLayerDiv.className = 'textLayer';
-      textLayerDiv.style.position = 'absolute';
-      textLayerDiv.style.top = '0';
-      textLayerDiv.style.left = '0';
-      textLayerDiv.style.width = '100%';
-      textLayerDiv.style.height = '100%';
-      textLayerDiv.style.zIndex = '2';
-      textLayerDiv.style.userSelect = 'text';
-      textLayerDiv.style.pointerEvents = 'auto';
-      
+      const textLayerDiv = document.createElement("div");
+      textLayerDiv.className = "textLayer";
+      textLayerDiv.style.position = "absolute";
+      textLayerDiv.style.top = "0";
+      textLayerDiv.style.left = "0";
+      textLayerDiv.style.width = "100%";
+      textLayerDiv.style.height = "100%";
+      textLayerDiv.style.zIndex = "2";
+      textLayerDiv.style.userSelect = "text";
+      textLayerDiv.style.pointerEvents = "auto";
+
       // 将canvas和文本层添加到页面包装器
       pageWrapper.appendChild(canvas);
       pageWrapper.appendChild(textLayerDiv);
       pageContainer.appendChild(pageWrapper);
-        // 渲染PDF到canvas
+      // 渲染PDF到canvas
       const context = canvas.getContext("2d");
       if (context) {
         // 缩放上下文以匹配设备像素比
         context.scale(devicePixelRatio, devicePixelRatio);
-        
+
         // 设置高质量渲染
         context.imageSmoothingEnabled = true;
-        context.imageSmoothingQuality = 'high';
-        
+        context.imageSmoothingQuality = "high";
+
         context.clearRect(0, 0, viewport.width, viewport.height);
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, viewport.width, viewport.height);
-        
+
         await page.render({
           canvasContext: context,
           viewport: viewport,
@@ -290,7 +328,7 @@
 
       // 渲染文本层
       await renderTextLayer(page, viewport, textLayerDiv);
-      
+
       if (error.includes("Canvas")) {
         error = "";
       }
@@ -298,17 +336,22 @@
       console.error("Failed to render page:", e);
       error = `无法渲染PDF页面 ${pageNum}: ${e}`;
     }
-  }  async function renderTextLayer(page: any, viewport: any, textLayerDiv: HTMLElement) {
+  }
+  async function renderTextLayer(
+    page: any,
+    viewport: any,
+    textLayerDiv: HTMLElement,
+  ) {
     try {
       // 获取文本内容
       const textContent = await page.getTextContent();
-      
+
       // 清空文本层容器
-      textLayerDiv.innerHTML = '';
-      
+      textLayerDiv.innerHTML = "";
+
       // 动态导入pdfjs-dist
       const pdfjsLib = await import("pdfjs-dist");
-      
+
       // 尝试使用PDF.js的TextLayer API
       try {
         if (pdfjsLib.TextLayer) {
@@ -332,59 +375,64 @@
     }
   }
   // 手动渲染文本层的改进版本
-  async function renderTextLayerManually(textContent: any, container: HTMLElement, viewport: any) {
+  async function renderTextLayerManually(
+    textContent: any,
+    container: HTMLElement,
+    viewport: any,
+  ) {
     try {
       // 清空容器
-      container.innerHTML = '';
-      
+      container.innerHTML = "";
+
       // 设置容器样式
-      container.style.position = 'absolute';
-      container.style.left = '0px';
-      container.style.top = '0px';
-      container.style.right = '0px';
-      container.style.bottom = '0px';
-      container.style.overflow = 'hidden';
-      container.style.opacity = '1';
-      container.style.lineHeight = '1.0';
-      container.style.fontSize = '1px';
-      
+      container.style.position = "absolute";
+      container.style.left = "0px";
+      container.style.top = "0px";
+      container.style.right = "0px";
+      container.style.bottom = "0px";
+      container.style.overflow = "hidden";
+      container.style.opacity = "1";
+      container.style.lineHeight = "1.0";
+      container.style.fontSize = "1px";
+
       // 遍历文本项目并创建span元素
       textContent.items.forEach((item: any, index: number) => {
-        if (!item.str || item.str.trim() === '') return;
-        
-        const span = document.createElement('span');
+        if (!item.str || item.str.trim() === "") return;
+
+        const span = document.createElement("span");
         span.textContent = item.str;
-        span.style.position = 'absolute';
-        span.style.whiteSpace = 'pre';
-        span.style.color = 'transparent';
-        span.style.cursor = 'text';
-        span.style.userSelect = 'text';
-        span.style.transformOrigin = '0% 0%';
-        span.style.pointerEvents = 'auto';
-        
+        span.style.position = "absolute";
+        span.style.whiteSpace = "pre";
+        span.style.color = "transparent";
+        span.style.cursor = "text";
+        span.style.userSelect = "text";
+        span.style.transformOrigin = "0% 0%";
+        span.style.pointerEvents = "auto";
+
         // 应用PDF.js的变换矩阵
         if (item.transform && item.transform.length >= 6) {
-          const [scaleX, skewY, skewX, scaleY, translateX, translateY] = item.transform;
-          
+          const [scaleX, skewY, skewX, scaleY, translateX, translateY] =
+            item.transform;
+
           // 设置位置
           span.style.left = `${translateX}px`;
           span.style.top = `${translateY}px`;
-          
+
           // 设置字体大小（使用Y轴缩放作为字体大小）
           const fontSize = Math.abs(scaleY);
           span.style.fontSize = `${fontSize}px`;
-          
+
           // 设置字体族（如果有的话）
           if (item.fontName) {
-            span.style.fontFamily = item.fontName.replace(/[+]/g, ' ');
+            span.style.fontFamily = item.fontName.replace(/[+]/g, " ");
           }
-          
+
           // 应用完整的变换矩阵
           if (scaleX !== 1 || skewY !== 0 || skewX !== 0 || scaleY !== 1) {
             const matrix = `matrix(${scaleX}, ${skewY}, ${skewX}, ${scaleY}, 0, 0)`;
             span.style.transform = matrix;
           }
-          
+
           // 设置精确的宽度和高度以提高选择精度
           if (item.width && item.width > 0) {
             span.style.width = `${item.width}px`;
@@ -396,16 +444,16 @@
             span.style.minHeight = `${fontSize}px`;
             span.style.maxHeight = `${fontSize}px`;
           }
-          
+
           // 添加边界框以提高选择精度
-          span.style.boxSizing = 'border-box';
-          span.style.overflow = 'hidden';
+          span.style.boxSizing = "border-box";
+          span.style.overflow = "hidden";
         }
-        
+
         // 添加数据属性以便调试
-        span.setAttribute('data-text-index', index.toString());
-        span.setAttribute('data-text-content', item.str);
-        
+        span.setAttribute("data-text-index", index.toString());
+        span.setAttribute("data-text-content", item.str);
+
         container.appendChild(span);
       });
     } catch (e) {
@@ -426,11 +474,12 @@
 
   async function prevPage() {
     await goToPage(currentPage - 1);
-  }  async function zoomIn() {
+  }
+  async function zoomIn() {
     userScale = Math.min(userScale * 1.2, 3.0);
     // 如果不是页面模式，切换到页面模式以使用用户设置的缩放
-    if (fitMode !== 'page') {
-      fitMode = 'page';
+    if (fitMode !== "page") {
+      fitMode = "page";
     }
     await renderPage(currentPage);
   }
@@ -438,13 +487,13 @@
   async function zoomOut() {
     userScale = Math.max(userScale / 1.2, 0.2);
     // 如果不是页面模式，切换到页面模式以使用用户设置的缩放
-    if (fitMode !== 'page') {
-      fitMode = 'page';
+    if (fitMode !== "page") {
+      fitMode = "page";
     }
     await renderPage(currentPage);
   }
 
-  async function setFitMode(mode: 'width' | 'height' | 'page') {
+  async function setFitMode(mode: "width" | "height" | "page") {
     fitMode = mode;
     await renderPage(currentPage);
   }
@@ -460,66 +509,72 @@
   }
 
   function addBookmark() {
-    const label = prompt(`为第 ${currentPage} 页添加书签:`, `页面 ${currentPage}`);
+    const label = prompt(
+      `为第 ${currentPage} 页添加书签:`,
+      `页面 ${currentPage}`,
+    );
     if (label) {
       bookmarks = [...bookmarks, { pageNum: currentPage, label }];
     }
   }
 
   function removeBookmark(pageNum: number) {
-    bookmarks = bookmarks.filter(b => b.pageNum !== pageNum);
+    bookmarks = bookmarks.filter((b) => b.pageNum !== pageNum);
   }
 
   async function searchInPDF() {
     if (!searchText.trim() || !pdfDoc) return;
-    
+
     isSearching = true;
     searchResults = [];
-    
+
     try {
-      const searchRegex = new RegExp(searchText.toLowerCase(), 'g');
+      const searchRegex = new RegExp(searchText.toLowerCase(), "g");
       const contextLength = 20; // 匹配项前后各保留的字符数
-      
+
       for (let i = 1; i <= totalPages; i++) {
         const page = await pdfDoc.getPage(i);
         const textContent = await page.getTextContent();
-        const text = textContent.items.map((item: any) => item.str).join(' ');
+        const text = textContent.items.map((item: any) => item.str).join(" ");
         const textLower = text.toLowerCase();
-        
+
         // 查找所有匹配项
         const matches: { index: number; text: string }[] = [];
         let match;
-        
+
         while ((match = searchRegex.exec(textLower)) !== null) {
           const matchIndex = match.index;
-          
+
           // 提取匹配项的上下文
           const start = Math.max(0, matchIndex - contextLength);
-          const end = Math.min(text.length, matchIndex + searchText.length + contextLength);
-          
+          const end = Math.min(
+            text.length,
+            matchIndex + searchText.length + contextLength,
+          );
+
           // 添加省略号标记
-          const prefix = start > 0 ? '...' : '';
-          const suffix = end < text.length ? '...' : '';
-          
+          const prefix = start > 0 ? "..." : "";
+          const suffix = end < text.length ? "..." : "";
+
           // 获取上下文文本
           const contextText = prefix + text.substring(start, end) + suffix;
-          
+
           matches.push({
             index: matchIndex,
-            text: contextText
+            text: contextText,
           });
         }
-        
+
         if (matches.length > 0) {
           searchResults.push({
             pageNum: i,
             matches: matches.length,
-            text: matches.map(m => m.text).join('\n\n') // 如果有多个匹配项，用换行分隔
+            text: matches.map((m) => m.text).join("\n\n"), // 如果有多个匹配项，用换行分隔
           });
         }
       }
     } catch (e) {
-      console.error('Search failed:', e);
+      console.error("Search failed:", e);
     } finally {
       isSearching = false;
     }
@@ -531,10 +586,10 @@
       if (selection && selection.toString().trim()) {
         await navigator.clipboard.writeText(selection.toString());
         // 可以添加一个提示消息
-        console.log('文本已复制到剪贴板');
+        console.log("文本已复制到剪贴板");
       }
     } catch (e) {
-      console.error('复制文本失败:', e);
+      console.error("复制文本失败:", e);
     }
   }
   function handleKeydown(event: KeyboardEvent) {
@@ -554,10 +609,11 @@
       goToPage(totalPages);
     } else if (event.ctrlKey && event.key === "c") {
       // Ctrl+C 复制选中文本
-      copySelectedText();    } else if (event.ctrlKey && event.key === "a") {
+      copySelectedText();
+    } else if (event.ctrlKey && event.key === "a") {
       // Ctrl+A 全选当前页面文本
       event.preventDefault();
-      const textLayer = document.querySelector('.textLayer');
+      const textLayer = document.querySelector(".textLayer");
       if (textLayer) {
         const selection = window.getSelection();
         const range = document.createRange();
@@ -577,45 +633,53 @@
         zoomOut();
       }
     }
-  }  // 自定义指令：渲染缩略图到canvas
-  function renderThumbnailCanvas(canvas: HTMLCanvasElement, sourceCanvas: HTMLCanvasElement) {
+  } // 自定义指令：渲染缩略图到canvas
+  function renderThumbnailCanvas(
+    canvas: HTMLCanvasElement,
+    sourceCanvas: HTMLCanvasElement,
+  ) {
     if (!sourceCanvas || !canvas) return;
-    
+
     function renderCanvas() {
-      if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
-      
+      if (
+        !sourceCanvas ||
+        sourceCanvas.width === 0 ||
+        sourceCanvas.height === 0
+      )
+        return;
+
       // Set the display canvas size to match the source canvas
       canvas.width = sourceCanvas.width;
       canvas.height = sourceCanvas.height;
-      
-      const ctx = canvas.getContext('2d');
+
+      const ctx = canvas.getContext("2d");
       if (ctx) {
         // Set high quality rendering
         ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        
+        ctx.imageSmoothingQuality = "high";
+
         // Clear the canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
+
         // Set white background
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
+
         // Draw the source canvas
         ctx.drawImage(sourceCanvas, 0, 0);
       }
     }
-    
+
     // Initial render
     renderCanvas();
-    
+
     return {
       update(newSourceCanvas: HTMLCanvasElement) {
         if (newSourceCanvas) {
           sourceCanvas = newSourceCanvas;
           renderCanvas();
         }
-      }
+      },
     };
   }
   // 自定义指令：懒加载缩略图
@@ -626,26 +690,31 @@
           if (entry.isIntersecting) {
             const thumbnailIndex = index;
             const thumbnail = thumbnails[thumbnailIndex];
-            
+
             if (thumbnail && !thumbnail.loaded) {
               // Add loading indicator
-              const loadingEl = entry.target.querySelector('.thumbnail-loading') as HTMLElement;
+              const loadingEl = entry.target.querySelector(
+                ".thumbnail-loading",
+              ) as HTMLElement;
               if (loadingEl) {
-                loadingEl.style.display = 'flex';
+                loadingEl.style.display = "flex";
               }
-              
+
               try {
                 await loadThumbnailOnDemand(thumbnailIndex);
               } catch (e) {
-                console.error(`Failed to load thumbnail ${thumbnailIndex + 1}:`, e);
+                console.error(
+                  `Failed to load thumbnail ${thumbnailIndex + 1}:`,
+                  e,
+                );
               } finally {
                 // Hide loading indicator
                 if (loadingEl) {
-                  loadingEl.style.display = 'none';
+                  loadingEl.style.display = "none";
                 }
               }
             }
-            
+
             // Stop observing this element once loaded
             if (thumbnail?.loaded) {
               observer.unobserve(entry.target);
@@ -655,9 +724,9 @@
       },
       {
         root: thumbnailsContainer,
-        rootMargin: '100px', // Load thumbnails when they're 100px away from viewport
-        threshold: 0.1
-      }
+        rootMargin: "100px", // Load thumbnails when they're 100px away from viewport
+        threshold: 0.1,
+      },
     );
 
     observer.observe(node);
@@ -666,25 +735,25 @@
       destroy() {
         observer.unobserve(node);
         observer.disconnect();
-      }
+      },
     };
   }
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div 
-  class="pdf-viewer-overlay" 
+<div
+  class="pdf-viewer-overlay"
   onclick={onClose}
-  onkeydown={(e) => e.key === 'Enter' && onClose()} 
-  role="button" 
+  onkeydown={(e) => e.key === "Enter" && onClose()}
+  role="button"
   tabindex="0"
 >
-  <div 
-    class="pdf-viewer-modal" 
+  <div
+    class="pdf-viewer-modal"
     onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()} 
-    role="dialog" 
+    onkeydown={(e) => e.stopPropagation()}
+    role="dialog"
     tabindex="-1"
   >
     <!-- 顶部工具栏 -->
@@ -692,7 +761,9 @@
       <div class="header-left">
         <button onclick={onClose} class="close-btn" aria-label="关闭PDF查看器">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            <path
+              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+            />
           </svg>
         </button>
         <div class="file-info">
@@ -700,25 +771,32 @@
           <span class="page-count">{totalPages} 页</span>
         </div>
       </div>
-        <div class="header-center">
+      <div class="header-center">
         <div class="page-navigation">
-          <button onclick={prevPage} disabled={currentPage <= 1} class="nav-btn prev-btn" aria-label="上一页">
+          <button
+            onclick={prevPage}
+            disabled={currentPage <= 1}
+            class="nav-btn prev-btn"
+            aria-label="上一页"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
+              <path
+                d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"
+              />
             </svg>
             <span class="nav-btn-label">上一页</span>
           </button>
-          
+
           <div class="page-input-container">
             <div class="page-input-group">
               <span class="page-label">第</span>
-              <input 
-                type="number" 
-                bind:value={currentPage} 
-                min="1" 
+              <input
+                type="number"
+                bind:value={currentPage}
+                min="1"
                 max={totalPages}
                 onkeydown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === "Enter") {
                     goToPage(currentPage);
                   }
                 }}
@@ -729,72 +807,95 @@
               <span class="page-label">页</span>
             </div>
             <div class="page-progress">
-              <div class="progress-bar" style="width: {(currentPage / totalPages) * 100}%"></div>
+              <div
+                class="progress-bar"
+                style="width: {(currentPage / totalPages) * 100}%"
+              ></div>
             </div>
           </div>
-          
-          <button onclick={nextPage} disabled={currentPage >= totalPages} class="nav-btn next-btn" aria-label="下一页">
+
+          <button
+            onclick={nextPage}
+            disabled={currentPage >= totalPages}
+            class="nav-btn next-btn"
+            aria-label="下一页"
+          >
             <span class="nav-btn-label">下一页</span>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              <path
+                d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"
+              />
             </svg>
           </button>
         </div>
       </div>
-      
+
       <div class="header-right">
-        <div class="view-controls">          <button onclick={toggleSidebar} class="icon-btn" class:active={showSidebar} aria-label="切换侧边栏">
+        <div class="view-controls">
+          <button
+            onclick={toggleSidebar}
+            class="icon-btn"
+            class:active={showSidebar}
+            aria-label="切换侧边栏"
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16 0h2v-2h-2v2zm0-10v2h2V7h-2zm0 6h2v-2h-2v2z"/>
+              <path
+                d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16 0h2v-2h-2v2zm0-10v2h2V7h-2zm0 6h2v-2h-2v2z"
+              />
             </svg>
           </button>
-            <button onclick={zoomOut} class="icon-btn" aria-label="缩小">
+          <button onclick={zoomOut} class="icon-btn" aria-label="缩小">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13H5v-2h14v2z"/>
+              <path d="M19 13H5v-2h14v2z" />
             </svg>
           </button>
-          
+
           <span class="zoom-display">{Math.round(scale * 100)}%</span>
-          
+
           <button onclick={zoomIn} class="icon-btn" aria-label="放大">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
             </svg>
           </button>
-          
+
           <div class="fit-controls">
-            <button 
-              onclick={() => setFitMode('width')} 
-              class="fit-btn" 
-              class:active={fitMode === 'width'}
+            <button
+              onclick={() => setFitMode("width")}
+              class="fit-btn"
+              class:active={fitMode === "width"}
               title="适合宽度"
             >
               宽度
             </button>
-            <button 
-              onclick={() => setFitMode('height')} 
-              class="fit-btn" 
-              class:active={fitMode === 'height'}
+            <button
+              onclick={() => setFitMode("height")}
+              class="fit-btn"
+              class:active={fitMode === "height"}
               title="适合高度"
             >
               高度
             </button>
-            <button 
-              onclick={() => setFitMode('page')} 
-              class="fit-btn" 
-              class:active={fitMode === 'page'}
+            <button
+              onclick={() => setFitMode("page")}
+              class="fit-btn"
+              class:active={fitMode === "page"}
               title="适合页面"
             >
               页面
             </button>
           </div>
-            <button onclick={rotate} class="icon-btn" aria-label="旋转90度">
+          <button onclick={rotate} class="icon-btn" aria-label="旋转90度">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
+              <path
+                d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"
+              />
             </svg>
-          </button>          <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
+          </button>
+          <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+              <path
+                d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+              />
             </svg>
           </button>
         </div>
@@ -807,51 +908,76 @@
       {#if showSidebar}
         <div class="pdf-sidebar">
           <div class="sidebar-tabs">
-            <button 
-              onclick={() => sidebarTab = 'thumbnails'} 
-              class="tab-btn" 
-              class:active={sidebarTab === 'thumbnails'}
+            <button
+              onclick={() => (sidebarTab = "thumbnails")}
+              class="tab-btn"
+              class:active={sidebarTab === "thumbnails"}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-8 12.5v-9l6 4.5-6 4.5z"
+                />
               </svg>
               缩略图
             </button>
-            <button 
-              onclick={() => sidebarTab = 'search'} 
-              class="tab-btn" 
-              class:active={sidebarTab === 'search'}
+            <button
+              onclick={() => (sidebarTab = "search")}
+              class="tab-btn"
+              class:active={sidebarTab === "search"}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                />
               </svg>
               搜索
             </button>
-            <button 
-              onclick={() => sidebarTab = 'bookmarks'} 
-              class="tab-btn" 
-              class:active={sidebarTab === 'bookmarks'}
+            <button
+              onclick={() => (sidebarTab = "bookmarks")}
+              class="tab-btn"
+              class:active={sidebarTab === "bookmarks"}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path
+                  d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+                />
               </svg>
               书签
             </button>
           </div>
 
           <div class="sidebar-content">
-            {#if sidebarTab === 'thumbnails'}              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>                {#each thumbnails as thumbnail, index}
-                  <div 
-                    class="thumbnail-item" 
+            {#if sidebarTab === "thumbnails"}
+              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>
+                {#each thumbnails as thumbnail, index}
+                  <div
+                    class="thumbnail-item"
                     class:active={thumbnail.pageNum === currentPage}
                     onclick={() => goToPage(thumbnail.pageNum)}
-                    onkeydown={(e) => e.key === 'Enter' && goToPage(thumbnail.pageNum)}
+                    onkeydown={(e) =>
+                      e.key === "Enter" && goToPage(thumbnail.pageNum)}
                     role="button"
                     tabindex="0"
                     title="跳转到第 {thumbnail.pageNum} 页"
                     use:lazyLoadThumbnail={index}
-                  >                    {#if thumbnail.loaded}
-                      <div 
+                  >
+                    {#if thumbnail.loaded}
+                      <div
                         class="thumbnail-canvas-wrapper"
                         style="aspect-ratio: {thumbnail.aspectRatio}"
                       >
@@ -862,7 +988,7 @@
                         ></canvas>
                       </div>
                     {:else}
-                      <div 
+                      <div
                         class="thumbnail-placeholder"
                         style="aspect-ratio: {thumbnail.aspectRatio}"
                       >
@@ -875,8 +1001,7 @@
                   </div>
                 {/each}
               </div>
-            
-            {:else if sidebarTab === 'search'}
+            {:else if sidebarTab === "search"}
               <div class="search-panel">
                 <div class="search-input-group">
                   <input
@@ -885,37 +1010,51 @@
                     placeholder="搜索PDF内容..."
                     class="search-input"
                     onkeydown={(e) => {
-                      if (e.key === 'Enter') {
+                      if (e.key === "Enter") {
                         searchInPDF();
                       }
                     }}
                   />
-                  <button onclick={searchInPDF} disabled={isSearching} class="search-btn">
+                  <button
+                    onclick={searchInPDF}
+                    disabled={isSearching}
+                    class="search-btn"
+                  >
                     {#if isSearching}
                       <div class="spinner small"></div>
                     {:else}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path
+                          d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                        />
                       </svg>
                     {/if}
                   </button>
                 </div>
-                
+
                 {#if searchResults.length > 0}
                   <div class="search-results">
                     <div class="search-results-header">
                       找到 {searchResults.length} 个结果
                     </div>
                     {#each searchResults as result}
-                      <div 
+                      <div
                         class="search-result-item"
                         onclick={() => goToPage(result.pageNum)}
-                        onkeydown={(e) => e.key === 'Enter' && goToPage(result.pageNum)}
+                        onkeydown={(e) =>
+                          e.key === "Enter" && goToPage(result.pageNum)}
                         role="button"
                         tabindex="0"
                       >
                         <div class="result-page">第 {result.pageNum} 页</div>
-                        <div class="result-matches">{result.matches} 个匹配</div>
+                        <div class="result-matches">
+                          {result.matches} 个匹配
+                        </div>
                         <div class="result-preview">{result.text}</div>
                       </div>
                     {/each}
@@ -924,18 +1063,22 @@
                   <div class="no-results">未找到匹配结果</div>
                 {/if}
               </div>
-            
-            {:else if sidebarTab === 'bookmarks'}
+            {:else if sidebarTab === "bookmarks"}
               <div class="bookmarks-panel">
                 <div class="bookmarks-header">
                   <button onclick={addBookmark} class="add-bookmark-btn">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                     </svg>
                     添加书签
                   </button>
                 </div>
-                
+
                 <div class="bookmarks-list">
                   {#each bookmarks as bookmark}
                     <div class="bookmark-item">
@@ -945,24 +1088,41 @@
                         title="跳转到第 {bookmark.pageNum} 页"
                       >
                         <div class="bookmark-title">{bookmark.label}</div>
-                        <div class="bookmark-page">第 {bookmark.pageNum} 页</div>
+                        <div class="bookmark-page">
+                          第 {bookmark.pageNum} 页
+                        </div>
                       </button>
-                      <button 
+                      <button
                         class="remove-bookmark-btn"
                         onclick={() => removeBookmark(bookmark.pageNum)}
                         aria-label="删除书签"
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
+                          <path
+                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                          />
                         </svg>
                       </button>
                     </div>
                   {/each}
-                  
+
                   {#if bookmarks.length === 0}
                     <div class="empty-bookmarks">
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" opacity="0.3">
-                        <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+                      <svg
+                        width="48"
+                        height="48"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        opacity="0.3"
+                      >
+                        <path
+                          d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+                        />
                       </svg>
                       <p>暂无书签</p>
                       <small>点击顶部书签按钮为当前页面添加书签</small>
@@ -973,9 +1133,10 @@
             {/if}
           </div>
         </div>
-      {/if}      <!-- PDF内容区域 -->
-      <div 
-        class="pdf-content" 
+      {/if}
+      <!-- PDF内容区域 -->
+      <div
+        class="pdf-content"
         onwheel={handleWheel}
         tabindex="-1"
         role="application"
@@ -1018,7 +1179,11 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(30, 30, 30, 0.95));
+    background: linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.9),
+      rgba(30, 30, 30, 0.95)
+    );
     backdrop-filter: blur(8px);
     display: flex;
     justify-content: center;
@@ -1029,14 +1194,18 @@
   }
 
   @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   .pdf-viewer-modal {
     background: linear-gradient(135deg, #ffffff, #fafbfc);
     border-radius: 16px;
-    box-shadow: 
+    box-shadow:
       0 25px 50px rgba(0, 0, 0, 0.25),
       0 0 0 1px rgba(255, 255, 255, 0.1);
     width: min(95vw, 1400px);
@@ -1129,13 +1298,17 @@
     border-radius: 16px;
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 
+    box-shadow:
       0 8px 32px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
   .nav-btn {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.2),
+      rgba(255, 255, 255, 0.1)
+    );
     color: white;
     border: none;
     border-radius: 12px;
@@ -1149,7 +1322,7 @@
     font-weight: 500;
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 
+    box-shadow:
       0 4px 16px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
     position: relative;
@@ -1157,13 +1330,18 @@
   }
 
   .nav-btn:before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent
+    );
     transition: left 0.5s;
   }
 
@@ -1172,9 +1350,13 @@
   }
 
   .nav-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.2));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0.2)
+    );
     transform: translateY(-2px);
-    box-shadow: 
+    box-shadow:
       0 8px 24px rgba(0, 0, 0, 0.15),
       inset 0 1px 0 rgba(255, 255, 255, 0.3);
     border-color: rgba(255, 255, 255, 0.25);
@@ -1226,7 +1408,7 @@
     padding: 8px 16px;
     border-radius: 12px;
     color: #333;
-    box-shadow: 
+    box-shadow:
       0 4px 16px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.7);
     border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1236,7 +1418,7 @@
 
   .page-input-group:focus-within {
     background: rgba(255, 255, 255, 1);
-    box-shadow: 
+    box-shadow:
       0 6px 20px rgba(0, 0, 0, 0.15),
       0 0 0 3px rgba(102, 126, 234, 0.2);
     transform: translateY(-1px);
@@ -1293,19 +1475,28 @@
   }
 
   .progress-bar:after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.6),
+      transparent
+    );
     animation: progressShine 2s infinite;
   }
 
   @keyframes progressShine {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
   }
   .header-right {
     display: flex;
@@ -1319,7 +1510,11 @@
     gap: 10px;
   }
   .icon-btn {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.12));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18),
+      rgba(255, 255, 255, 0.12)
+    );
     color: white;
     border: none;
     border-radius: 8px;
@@ -1333,7 +1528,7 @@
     min-width: 32px;
     height: 32px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 
+    box-shadow:
       0 4px 12px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
     position: relative;
@@ -1341,13 +1536,18 @@
   }
 
   .icon-btn:before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.25),
+      transparent
+    );
     transition: left 0.4s;
   }
 
@@ -1356,9 +1556,13 @@
   }
 
   .icon-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.22));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.28),
+      rgba(255, 255, 255, 0.22)
+    );
     transform: translateY(-2px);
-    box-shadow: 
+    box-shadow:
       0 8px 20px rgba(0, 0, 0, 0.15),
       inset 0 1px 0 rgba(255, 255, 255, 0.3);
     border-color: rgba(255, 255, 255, 0.2);
@@ -1383,15 +1587,23 @@
   }
 
   .icon-btn.active {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.25));
-    box-shadow: 
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.35),
+      rgba(255, 255, 255, 0.25)
+    );
+    box-shadow:
       0 6px 16px rgba(0, 0, 0, 0.12),
       inset 0 1px 0 rgba(255, 255, 255, 0.4);
     border-color: rgba(255, 255, 255, 0.25);
   }
 
   .zoom-display {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.1));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.15),
+      rgba(255, 255, 255, 0.1)
+    );
     color: white;
     padding: 8px 14px;
     border-radius: 10px;
@@ -1401,7 +1613,7 @@
     text-align: center;
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 
+    box-shadow:
       0 4px 12px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
     letter-spacing: 0.025em;
@@ -1409,12 +1621,16 @@
 
   .fit-controls {
     display: flex;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.1));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.15),
+      rgba(255, 255, 255, 0.1)
+    );
     border-radius: 10px;
     overflow: hidden;
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 
+    box-shadow:
       0 4px 12px rgba(0, 0, 0, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
@@ -1434,13 +1650,18 @@
   }
 
   .fit-btn:before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
     transition: left 0.4s;
   }
 
@@ -1559,7 +1780,8 @@
   .thumbnail-item.active {
     border-color: #667eea;
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-  }  .thumbnail-canvas-wrapper {
+  }
+  .thumbnail-canvas-wrapper {
     position: relative;
     width: 100%;
     overflow: hidden;
@@ -1574,7 +1796,8 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-  }  .thumbnail-placeholder {
+  }
+  .thumbnail-placeholder {
     width: 100%;
     background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
     border-radius: 4px;
@@ -1911,7 +2134,6 @@
     border-radius: 4px;
   }
 
-
   /* 新的PDF页面容器样式 */
   .pdf-page-container {
     display: flex;
@@ -1922,7 +2144,8 @@
   }
 
   /* 加载和错误状态 */
-  .loading-state, .error-state {
+  .loading-state,
+  .error-state {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -1997,18 +2220,22 @@
   }
 
   @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
   /* 响应式设计 */
   @media (max-width: 768px) {
-
     .pdf-content {
       padding: 12px;
     }
 
-    .search-panel, .bookmarks-panel {
+    .search-panel,
+    .bookmarks-panel {
       padding: 12px;
     }
   }
@@ -2021,7 +2248,7 @@
     bottom: 0;
     overflow: hidden;
     opacity: 1;
-    line-height: 1.0;
+    line-height: 1;
     pointer-events: auto;
     user-select: text;
     -webkit-user-select: text;
