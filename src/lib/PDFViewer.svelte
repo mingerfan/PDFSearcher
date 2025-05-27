@@ -9,9 +9,24 @@
   let totalPages = $state(1);
   let loading = $state(true);
   let error = $state("");
-  let pdfCanvas = $state<HTMLCanvasElement>();
-  let pdfDoc: any = null;
-  let scale = $state(1.2);  onMount(async () => {
+  let pdfCanvas = $state<HTMLCanvasElement>();  let pdfDoc: any = null;
+  let scale = $state(1.2);
+
+  // 等待Canvas元素准备就绪
+  async function waitForCanvas(maxAttempts = 10): Promise<boolean> {
+    for (let i = 0; i < maxAttempts; i++) {
+      if (pdfCanvas) {
+        console.log(`Canvas元素在第${i + 1}次尝试时准备就绪`);
+        return true;
+      }
+      console.log(`等待Canvas元素... 尝试 ${i + 1}/${maxAttempts}`);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    console.error("Canvas元素在等待时间内未准备就绪");
+    return false;
+  }
+
+  onMount(async () => {
     try {
       // 动态导入 PDF.js
       const pdfjsLib = await import("pdfjs-dist");
@@ -41,23 +56,40 @@
       const loadingTask = pdfjsLib.getDocument({ data: bytes });
       pdfDoc = await loadingTask.promise;
       totalPages = pdfDoc.numPages;
+        console.log("PDF加载成功，总页数:", totalPages);
       
-      console.log("PDF加载成功，总页数:", totalPages);
+      // 先设置loading为false，让DOM渲染canvas元素
+      loading = false;
+      
+      // 等待canvas元素准备就绪
+      const canvasReady = await waitForCanvas();
+      if (!canvasReady) {
+        error = "Canvas元素初始化失败";
+        return;
+      }
       
       // 渲染初始页面
       await renderPage(currentPage);
-      loading = false;
     } catch (e) {
       console.error("Failed to load PDF:", e);
       error = `无法加载PDF文件: ${e}`;
       loading = false;
     }
   });
-
   async function renderPage(pageNum: number) {
-    if (!pdfDoc || !pdfCanvas) return;
+    if (!pdfDoc) {
+      console.log("PDF文档未加载");
+      return;
+    }
+    
+    if (!pdfCanvas) {
+      console.log("Canvas元素未准备好");
+      error = "Canvas元素未准备好，请重试";
+      return;
+    }
 
     try {
+      console.log("开始渲染页面:", pageNum);
       const page = await pdfDoc.getPage(pageNum);
       const viewport = page.getViewport({ scale });
       
@@ -65,23 +97,58 @@
       pdfCanvas.width = viewport.width;
 
       const context = pdfCanvas.getContext("2d");
+      if (!context) {
+        console.error("无法获取canvas context");
+        error = "Canvas上下文初始化失败";
+        return;
+      }
+      
+      // 清除之前的内容并设置白色背景
+      context.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+      
       const renderContext = {
         canvasContext: context,
         viewport: viewport,
       };
 
       await page.render(renderContext).promise;
+      console.log("页面渲染完成:", pageNum);
+      
+      // 清除可能的错误信息
+      if (error.includes("Canvas")) {
+        error = "";
+      }
     } catch (e) {
       console.error("Failed to render page:", e);
-      error = "无法渲染PDF页面";
+      error = `无法渲染PDF页面 ${pageNum}: ${e}`;
     }
   }
-
   async function goToPage(pageNum: number) {
     if (pageNum >= 1 && pageNum <= totalPages && pageNum !== currentPage) {
       currentPage = pageNum;
       await renderPage(currentPage);
     }
+  }
+
+  // 重试渲染功能
+  async function retryRender() {
+    if (loading || !pdfDoc) return;
+    
+    console.log("重新渲染当前页面:", currentPage);
+    error = "";
+    
+    // 如果canvas还未准备好，等待一下
+    if (!pdfCanvas) {
+      const canvasReady = await waitForCanvas();
+      if (!canvasReady) {
+        error = "Canvas元素仍未准备好";
+        return;
+      }
+    }
+    
+    await renderPage(currentPage);
   }
 
   async function nextPage() {
@@ -144,13 +211,19 @@
         <span class="zoom-info">{Math.round(scale * 100)}%</span>
         <button onclick={zoomIn}>🔍+</button>
       </div>
-    </div>
-
-    <div class="pdf-content">
+    </div>    <div class="pdf-content">
       {#if loading}
-        <div class="loading">加载中...</div>
+        <div class="loading">
+          <div class="loading-spinner"></div>
+          <div>加载中...</div>
+        </div>
       {:else if error}
-        <div class="error">{error}</div>
+        <div class="error">
+          <div class="error-message">{error}</div>
+          {#if error.includes("Canvas")}
+            <button onclick={retryRender} class="retry-btn">重试渲染</button>
+          {/if}
+        </div>
       {:else}
         <canvas bind:this={pdfCanvas} class="pdf-canvas"></canvas>
       {/if}
@@ -273,17 +346,51 @@
     max-height: 100%;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   }
-
   .loading, .error {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     height: 200px;
     font-size: 1.2rem;
     color: #6c757d;
+    gap: 1rem;
   }
 
   .error {
     color: #dc3545;
+  }
+
+  .error-message {
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .retry-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+
+  .retry-btn:hover {
+    background: #218838;
+  }
+
+  .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
   }
 </style>
