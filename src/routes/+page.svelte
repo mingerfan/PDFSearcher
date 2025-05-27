@@ -156,8 +156,9 @@
   }
 </script>
 
-<main class="container">
-  <h1>PDF搜索工具</h1>
+<main class="app-layout">
+  <div class="container">
+    <h1>PDF搜索工具</h1>
 
   <div class="search-form">
     <div class="folder-select">
@@ -265,9 +266,14 @@
       onClose={closePDFViewer}
     />
   {/if}
+  </div>
 </main>
 
 <style>
+  .app-layout {
+    min-height: 100vh;
+  }
+
   .container {
     margin: 0 auto;
     padding: 2rem;
