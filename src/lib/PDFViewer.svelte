@@ -10,9 +10,9 @@
   let loading = $state(true);
   let error = $state("");
   let pdfCanvas = $state<HTMLCanvasElement>();
-  let pdfDoc: any = null;
-  let scale = $state(1.2);
+  let pdfDoc: any = null;  let scale = $state(1.2);
   let fitMode = $state<'width' | 'height' | 'page'>('page');
+  let userScale = $state(1.2); // 用户手动设置的缩放
   let rotateAngle = $state(0);
   
   // 侧边栏状态
@@ -131,25 +131,27 @@
         aspectRatio: 3/4
       });
     }
-  }
-
-  async function renderPage(pageNum: number) {
+  }  async function renderPage(pageNum: number) {
     if (!pdfDoc || !pdfCanvas) return;
 
     try {
       const page = await pdfDoc.getPage(pageNum);
-      let viewport = page.getViewport({ scale, rotation: rotateAngle });
+      let finalScale = userScale;
       
-      // 根据适配模式调整scale
+      // 根据适配模式计算最终的缩放比例
       if (fitMode === 'width' && pdfCanvas.parentElement) {
         const containerWidth = pdfCanvas.parentElement.clientWidth - 40;
-        const scaleToFit = containerWidth / viewport.width;
-        viewport = page.getViewport({ scale: scaleToFit, rotation: rotateAngle });
+        const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
+        finalScale = containerWidth / baseViewport.width;
       } else if (fitMode === 'height' && pdfCanvas.parentElement) {
         const containerHeight = pdfCanvas.parentElement.clientHeight - 40;
-        const scaleToFit = containerHeight / viewport.height;
-        viewport = page.getViewport({ scale: scaleToFit, rotation: rotateAngle });
+        const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
+        finalScale = containerHeight / baseViewport.height;
       }
+      
+      // 更新显示的scale值
+      scale = finalScale;
+      const viewport = page.getViewport({ scale: finalScale, rotation: rotateAngle });
       
       pdfCanvas.height = viewport.height;
       pdfCanvas.width = viewport.width;
@@ -191,20 +193,22 @@
 
   async function prevPage() {
     await goToPage(currentPage - 1);
-  }
-
-  async function zoomIn() {
+  }  async function zoomIn() {
+    userScale = Math.min(userScale * 1.2, 3.0);
+    // 如果不是页面模式，切换到页面模式以使用用户设置的缩放
     if (fitMode !== 'page') {
-      scale = Math.min(scale * 1.2, 3.0);
-      await renderPage(currentPage);
+      fitMode = 'page';
     }
+    await renderPage(currentPage);
   }
 
   async function zoomOut() {
+    userScale = Math.max(userScale / 1.2, 0.2);
+    // 如果不是页面模式，切换到页面模式以使用用户设置的缩放
     if (fitMode !== 'page') {
-      scale = Math.max(scale / 1.2, 0.2);
-      await renderPage(currentPage);
+      fitMode = 'page';
     }
+    await renderPage(currentPage);
   }
 
   async function setFitMode(mode: 'width' | 'height' | 'page') {
@@ -366,8 +370,7 @@
               <path d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16 0h2v-2h-2v2zm0-10v2h2V7h-2zm0 6h2v-2h-2v2z"/>
             </svg>
           </button>
-          
-          <button onclick={zoomOut} disabled={fitMode !== 'page'} class="icon-btn" aria-label="缩小">
+            <button onclick={zoomOut} class="icon-btn" aria-label="缩小">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13H5v-2h14v2z"/>
             </svg>
@@ -375,7 +378,7 @@
           
           <span class="zoom-display">{Math.round(scale * 100)}%</span>
           
-          <button onclick={zoomIn} disabled={fitMode !== 'page'} class="icon-btn" aria-label="放大">
+          <button onclick={zoomIn} class="icon-btn" aria-label="放大">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
             </svg>
