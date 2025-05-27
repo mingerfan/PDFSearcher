@@ -458,8 +458,20 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="pdf-viewer-overlay" onclick={onClose} role="button" tabindex="0">
-  <div class="pdf-viewer-modal" onclick={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
+<div 
+  class="pdf-viewer-overlay" 
+  onclick={onClose}
+  onkeydown={(e) => e.key === 'Enter' && onClose()} 
+  role="button" 
+  tabindex="0"
+>
+  <div 
+    class="pdf-viewer-modal" 
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={(e) => e.stopPropagation()} 
+    role="dialog" 
+    tabindex="-1"
+  >
     <!-- 顶部工具栏 -->
     <div class="pdf-header">
       <div class="header-left">
@@ -622,6 +634,7 @@
                     class="thumbnail-item" 
                     class:active={thumbnail.pageNum === currentPage}
                     onclick={() => goToPage(thumbnail.pageNum)}
+                    onkeydown={(e) => e.key === 'Enter' && goToPage(thumbnail.pageNum)}
                     role="button"
                     tabindex="0"
                     title="跳转到第 {thumbnail.pageNum} 页"
@@ -686,6 +699,7 @@
                       <div 
                         class="search-result-item"
                         onclick={() => goToPage(result.pageNum)}
+                        onkeydown={(e) => e.key === 'Enter' && goToPage(result.pageNum)}
                         role="button"
                         tabindex="0"
                       >
@@ -751,7 +765,13 @@
       {/if}
 
       <!-- PDF内容区域 -->
-      <div class="pdf-content" onwheel={handleWheel}>
+      <div 
+        class="pdf-content" 
+        onwheel={handleWheel}
+        tabindex="-1"
+        role="application"
+        aria-label="PDF阅读器内容区域"
+      >
         {#if loading}
           <div class="loading-state">
             <div class="spinner large"></div>
