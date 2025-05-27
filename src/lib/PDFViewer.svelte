@@ -473,36 +473,43 @@
           <span class="page-count">{totalPages} 页</span>
         </div>
       </div>
-      
-      <div class="header-center">
+        <div class="header-center">
         <div class="page-navigation">
-          <button onclick={prevPage} disabled={currentPage <= 1} aria-label="上一页">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+          <button onclick={prevPage} disabled={currentPage <= 1} class="nav-btn prev-btn" aria-label="上一页">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
             </svg>
+            <span class="nav-btn-label">上一页</span>
           </button>
           
-          <div class="page-input-group">
-            <input 
-              type="number" 
-              bind:value={currentPage} 
-              min="1" 
-              max={totalPages}
-              onkeydown={(e) => {
-                if (e.key === 'Enter') {
-                  goToPage(currentPage);
-                }
-              }}
-              onblur={() => goToPage(currentPage)}
-              class="page-input"
-            />
-            <span class="page-separator">of</span>
-            <span class="total-pages">{totalPages}</span>
+          <div class="page-input-container">
+            <div class="page-input-group">
+              <span class="page-label">第</span>
+              <input 
+                type="number" 
+                bind:value={currentPage} 
+                min="1" 
+                max={totalPages}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') {
+                    goToPage(currentPage);
+                  }
+                }}
+                onblur={() => goToPage(currentPage)}
+                class="page-input"
+              />
+              <span class="page-separator">/ {totalPages}</span>
+              <span class="page-label">页</span>
+            </div>
+            <div class="page-progress">
+              <div class="progress-bar" style="width: {(currentPage / totalPages) * 100}%"></div>
+            </div>
           </div>
           
-          <button onclick={nextPage} disabled={currentPage >= totalPages} aria-label="下一页">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+          <button onclick={nextPage} disabled={currentPage >= totalPages} class="nav-btn next-btn" aria-label="下一页">
+            <span class="nav-btn-label">下一页</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
             </svg>
           </button>
         </div>
@@ -878,7 +885,6 @@
     color: rgba(255, 255, 255, 0.8);
     font-weight: 400;
   }
-
   .header-center {
     display: flex;
     align-items: center;
@@ -888,131 +894,341 @@
   .page-navigation {
     display: flex;
     align-items: center;
-    gap: 12px;
-    background: rgba(255, 255, 255, 0.15);
-    padding: 8px 16px;
+    gap: 16px;
+    background: rgba(255, 255, 255, 0.12);
+    padding: 12px 20px;
+    border-radius: 16px;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+      0 8px 32px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .nav-btn {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+    color: white;
+    border: none;
     border-radius: 12px;
-    backdrop-filter: blur(10px);
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .nav-btn:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transition: left 0.5s;
+  }
+
+  .nav-btn:hover:not(:disabled):before {
+    left: 100%;
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.2));
+    transform: translateY(-2px);
+    box-shadow: 
+      0 8px 24px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .nav-btn:active:not(:disabled) {
+    transform: translateY(-1px);
+    transition-duration: 0.1s;
+  }
+
+  .nav-btn:disabled {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.3);
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .nav-btn:disabled:before {
+    display: none;
+  }
+
+  .nav-btn-label {
+    font-weight: 600;
+    letter-spacing: 0.025em;
+  }
+
+  .prev-btn svg {
+    order: -1;
+  }
+
+  .next-btn svg {
+    order: 1;
+  }
+
+  .page-input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
   }
 
   .page-input-group {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: rgba(255, 255, 255, 0.9);
-    padding: 6px 12px;
-    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 8px 16px;
+    border-radius: 12px;
     color: #333;
+    box-shadow: 
+      0 4px 16px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(8px);
+    transition: all 0.3s ease;
+  }
+
+  .page-input-group:focus-within {
+    background: rgba(255, 255, 255, 1);
+    box-shadow: 
+      0 6px 20px rgba(0, 0, 0, 0.15),
+      0 0 0 3px rgba(102, 126, 234, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .page-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #64748b;
+    white-space: nowrap;
   }
 
   .page-input {
-    width: 50px;
+    width: 60px;
     border: none;
     background: transparent;
-    color: #333;
-    font-weight: 600;
+    color: #1e293b;
+    font-weight: 700;
     text-align: center;
-    font-size: 14px;
+    font-size: 16px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
   }
 
   .page-input:focus {
     outline: none;
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
   }
 
   .page-separator {
-    color: #666;
-    font-size: 12px;
-  }
-
-  .total-pages {
-    color: #666;
-    font-weight: 500;
+    color: #94a3b8;
     font-size: 14px;
+    font-weight: 600;
   }
 
+  .page-progress {
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    border-radius: 2px;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 8px rgba(102, 126, 234, 0.5);
+    position: relative;
+  }
+
+  .progress-bar:after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+    animation: progressShine 2s infinite;
+  }
+
+  @keyframes progressShine {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
   .header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
   }
 
   .view-controls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   .icon-btn {
-    background: rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.12));
     color: white;
     border: none;
-    border-radius: 8px;
-    padding: 8px;
+    border-radius: 10px;
+    padding: 10px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(10px);
-    min-width: 36px;
-    height: 36px;
+    backdrop-filter: blur(12px);
+    min-width: 40px;
+    height: 40px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+      0 4px 12px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .icon-btn:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    transition: left 0.4s;
+  }
+
+  .icon-btn:hover:not(:disabled):before {
+    left: 100%;
   }
 
   .icon-btn:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.25);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.22));
+    transform: translateY(-2px);
+    box-shadow: 
+      0 8px 20px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .icon-btn:active:not(:disabled) {
     transform: translateY(-1px);
+    transition-duration: 0.1s;
   }
 
   .icon-btn:disabled {
     background: rgba(255, 255, 255, 0.05);
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.3);
     cursor: not-allowed;
     transform: none;
+    box-shadow: none;
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .icon-btn:disabled:before {
+    display: none;
   }
 
   .icon-btn.active {
-    background: rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.25));
+    box-shadow: 
+      0 6px 16px rgba(0, 0, 0, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 255, 255, 0.25);
   }
 
   .zoom-display {
-    background: rgba(255, 255, 255, 0.15);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.1));
     color: white;
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    min-width: 50px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    min-width: 60px;
     text-align: center;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+      0 4px 12px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    letter-spacing: 0.025em;
   }
 
   .fit-controls {
     display: flex;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.1));
+    border-radius: 10px;
     overflow: hidden;
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 
+      0 4px 12px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
   .fit-btn {
     background: transparent;
     color: white;
     border: none;
-    padding: 6px 12px;
+    padding: 8px 14px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     white-space: nowrap;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .fit-btn:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.4s;
+  }
+
+  .fit-btn:hover:before {
+    left: 100%;
   }
 
   .fit-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .fit-btn.active {
     background: rgba(255, 255, 255, 0.25);
-    font-weight: 600;
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 
   /* 主内容区域 */
