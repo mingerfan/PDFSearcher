@@ -84,54 +84,119 @@
     
     thumbnails = [];
     
-    // 生成所有页面的缩略图
-    for (let i = 1; i <= Math.min(totalPages, 50); i++) {
-      try {
-        const page = await pdfDoc.getPage(i);
-        const viewport = page.getViewport({ scale: 0.2 });
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        
-        const context = canvas.getContext('2d');
-        if (context) {
-          context.fillStyle = '#ffffff';
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          
-          await page.render({
-            canvasContext: context,
-            viewport: viewport,
-          }).promise;
-        }
-        
-        thumbnails.push({
-          pageNum: i,
-          canvas: canvas,
-          loaded: true,
-          aspectRatio: viewport.width / viewport.height
-        });
-      } catch (e) {
-        console.error(`Failed to generate thumbnail for page ${i}:`, e);
-        thumbnails.push({
-          pageNum: i,
-          canvas: document.createElement('canvas'),
-          loaded: false,
-          aspectRatio: 3/4
-        });
-      }
+    // First, get the dimensions of the first page to estimate aspect ratio
+    let defaultAspectRatio = 3/4; // fallback
+    try {
+      const firstPage = await pdfDoc.getPage(1);
+      const firstViewport = firstPage.getViewport({ scale: 1 });
+      defaultAspectRatio = firstViewport.width / firstViewport.height;
+    } catch (e) {
+      console.error("Failed to get default aspect ratio:", e);
     }
     
-    // 如果页面过多，剩余的用占位符
-    for (let i = 51; i <= totalPages; i++) {
+    // 初始化所有缩略图为未加载状态
+    for (let i = 1; i <= totalPages; i++) {
       thumbnails.push({
         pageNum: i,
         canvas: document.createElement('canvas'),
         loaded: false,
-        aspectRatio: 3/4
+        aspectRatio: defaultAspectRatio // Use calculated default aspect ratio
       });
     }
-  }  async function renderPage(pageNum: number) {
+    
+    // 首先生成前10页的缩略图，确保快速显示
+    const initialBatch = Math.min(totalPages, 10);
+    for (let i = 1; i <= initialBatch; i++) {
+      await generateSingleThumbnail(i - 1);
+    }
+    
+    // 后台继续生成第11-50页的缩略图
+    if (totalPages > initialBatch) {
+      setTimeout(async () => {
+        await generateRemainingThumbnails(initialBatch, Math.min(50, totalPages));
+      }, 100);
+    }
+  }
+  async function generateSingleThumbnail(index: number) {
+    if (!pdfDoc || !thumbnails[index] || thumbnails[index].loaded) return;
+    
+    try {
+      const pageNum = thumbnails[index].pageNum;
+      const page = await pdfDoc.getPage(pageNum);
+      
+      // Calculate proper thumbnail scale - aim for max 200px width or height
+      const baseViewport = page.getViewport({ scale: 1 });
+      const maxDimension = 200;
+      const thumbnailScale = Math.min(
+        maxDimension / baseViewport.width,
+        maxDimension / baseViewport.height
+      );
+      
+      // Get viewport with proper scale and no rotation for thumbnails
+      const viewport = page.getViewport({ 
+        scale: thumbnailScale,
+        rotation: 0  // Always use 0 rotation for consistent thumbnails
+      });
+      
+      const canvas = thumbnails[index].canvas;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      
+      const context = canvas.getContext('2d');
+      if (context) {
+        // Clear canvas
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Set white background
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Set rendering quality
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise;
+      }
+      
+      // Calculate aspect ratio based on base dimensions (not scaled)
+      thumbnails[index].loaded = true;
+      thumbnails[index].aspectRatio = baseViewport.width / baseViewport.height;
+      
+      // 触发响应式更新
+      thumbnails = [...thumbnails];
+    } catch (e) {
+      console.error(`Failed to generate thumbnail for page ${thumbnails[index].pageNum}:`, e);
+    }
+  }
+  async function generateRemainingThumbnails(startIndex: number, endIndex?: number) {
+    if (!pdfDoc) return;
+    
+    const end = endIndex !== undefined ? Math.min(endIndex, thumbnails.length) : thumbnails.length;
+    
+    // 分批生成剩余缩略图，避免阻塞UI
+    const batchSize = 5;
+    for (let i = startIndex; i < end; i += batchSize) {
+      const batch = [];
+      
+      for (let j = i; j < Math.min(i + batchSize, end); j++) {
+        batch.push(generateSingleThumbnail(j));
+      }
+      
+      await Promise.all(batch);
+      
+      // 每批次之间短暂延迟，保持UI响应
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  }
+
+  // 懒加载缩略图 - 当缩略图进入视口时生成
+  async function loadThumbnailOnDemand(index: number) {
+    if (!thumbnails[index] || thumbnails[index].loaded) return;
+    await generateSingleThumbnail(index);
+  }async function renderPage(pageNum: number) {
     if (!pdfDoc || !pdfCanvas) return;
 
     try {
@@ -291,21 +356,98 @@
         zoomOut();
       }
     }
-  }
-
-  // 自定义指令：渲染缩略图到canvas
+  }  // 自定义指令：渲染缩略图到canvas
   function renderThumbnailCanvas(canvas: HTMLCanvasElement, sourceCanvas: HTMLCanvasElement) {
+    if (!sourceCanvas || !canvas) return;
+    
+    // Set canvas size to match source
+    canvas.width = sourceCanvas.width;
+    canvas.height = sourceCanvas.height;
+    
     const ctx = canvas.getContext('2d');
-    if (ctx && sourceCanvas) {
+    if (ctx && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+      // Clear the canvas first
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Set rendering quality
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      
+      // Draw the source canvas
       ctx.drawImage(sourceCanvas, 0, 0);
     }
     
     return {
       update(newSourceCanvas: HTMLCanvasElement) {
+        if (!newSourceCanvas || !canvas) return;
+        
+        // Update canvas size
+        canvas.width = newSourceCanvas.width;
+        canvas.height = newSourceCanvas.height;
+        
         const ctx = canvas.getContext('2d');
-        if (ctx && newSourceCanvas) {
+        if (ctx && newSourceCanvas.width > 0 && newSourceCanvas.height > 0) {
+          // Clear the canvas first
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          
+          // Set rendering quality
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          
+          // Draw the updated source canvas
           ctx.drawImage(newSourceCanvas, 0, 0);
         }
+      }
+    };
+  }
+  // 自定义指令：懒加载缩略图
+  function lazyLoadThumbnail(node: HTMLElement, index: number) {
+    const observer = new IntersectionObserver(
+      async (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const thumbnailIndex = index;
+            const thumbnail = thumbnails[thumbnailIndex];
+            
+            if (thumbnail && !thumbnail.loaded) {
+              // Add loading indicator
+              const loadingEl = entry.target.querySelector('.thumbnail-loading');
+              if (loadingEl) {
+                loadingEl.style.display = 'flex';
+              }
+              
+              try {
+                await loadThumbnailOnDemand(thumbnailIndex);
+              } catch (e) {
+                console.error(`Failed to load thumbnail ${thumbnailIndex + 1}:`, e);
+              } finally {
+                // Hide loading indicator
+                if (loadingEl) {
+                  loadingEl.style.display = 'none';
+                }
+              }
+            }
+            
+            // Stop observing this element once loaded
+            if (thumbnail?.loaded) {
+              observer.unobserve(entry.target);
+            }
+          }
+        }
+      },
+      {
+        root: thumbnailsContainer,
+        rootMargin: '100px', // Load thumbnails when they're 100px away from viewport
+        threshold: 0.1
+      }
+    );
+
+    observer.observe(node);
+
+    return {
+      destroy() {
+        observer.unobserve(node);
+        observer.disconnect();
       }
     };
   }
@@ -465,8 +607,7 @@
           </div>
 
           <div class="sidebar-content">
-            {#if sidebarTab === 'thumbnails'}
-              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>                {#each thumbnails as thumbnail}
+            {#if sidebarTab === 'thumbnails'}              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>                {#each thumbnails as thumbnail, index}
                   <div 
                     class="thumbnail-item" 
                     class:active={thumbnail.pageNum === currentPage}
@@ -474,6 +615,7 @@
                     role="button"
                     tabindex="0"
                     title="跳转到第 {thumbnail.pageNum} 页"
+                    use:lazyLoadThumbnail={index}
                   >
                     {#if thumbnail.loaded}
                       <div 
