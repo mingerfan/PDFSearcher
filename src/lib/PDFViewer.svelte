@@ -3,14 +3,13 @@
   import { onMount } from "svelte";
 
   const { filePath, initialPage = 1, onClose } = $props<{ filePath: string; initialPage?: number; onClose: () => void}>();
-
   let pdfData = $state<string>("");
   let currentPage = $state(initialPage);
   let totalPages = $state(1);
   let loading = $state(true);
   let error = $state("");
-  let pdfCanvas = $state<HTMLCanvasElement>();
-  let pdfDoc: any = null;  let scale = $state(1.2);
+  let pdfDoc: any = null;
+  let scale = $state(1.2);
   let fitMode = $state<'width' | 'height' | 'page'>('page');
   let userScale = $state(1.2); // 用户手动设置的缩放
   let rotateAngle = $state(0);
@@ -34,10 +33,10 @@
   
   // 书签状态
   let bookmarks = $state<Array<{ pageNum: number; label: string }>>([]);
-
-  async function waitForCanvas(maxAttempts = 10): Promise<boolean> {
+  async function waitForPageContainer(maxAttempts = 10): Promise<boolean> {
     for (let i = 0; i < maxAttempts; i++) {
-      if (pdfCanvas) {
+      const container = document.getElementById('pdfPageContainer');
+      if (container) {
         return true;
       }
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -66,9 +65,9 @@
         
       loading = false;
       
-      const canvasReady = await waitForCanvas();
-      if (!canvasReady) {
-        error = "Canvas元素初始化失败";
+      const containerReady = await waitForPageContainer();
+      if (!containerReady) {
+        error = "PDF容器初始化失败";
         return;
       }
       
@@ -79,7 +78,7 @@
       error = `无法加载PDF文件: ${e}`;
       loading = false;
     }
-  });  async function generateThumbnails() {
+  });async function generateThumbnails() {
     if (!pdfDoc) return;
     
     thumbnails = [];
@@ -200,20 +199,24 @@
   async function loadThumbnailOnDemand(index: number) {
     if (!thumbnails[index] || thumbnails[index].loaded) return;
     await generateSingleThumbnail(index);
-  }async function renderPage(pageNum: number) {
-    if (!pdfDoc || !pdfCanvas) return;
+  }  async function renderPage(pageNum: number) {
+    if (!pdfDoc) return;
 
     try {
       const page = await pdfDoc.getPage(pageNum);
       let finalScale = userScale;
       
+      // 获取页面容器
+      const pageContainer = document.getElementById('pdfPageContainer');
+      if (!pageContainer) return;
+      
       // 根据适配模式计算最终的缩放比例
-      if (fitMode === 'width' && pdfCanvas.parentElement) {
-        const containerWidth = pdfCanvas.parentElement.clientWidth - 40;
+      if (fitMode === 'width') {
+        const containerWidth = pageContainer.clientWidth - 40;
         const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
         finalScale = containerWidth / baseViewport.width;
-      } else if (fitMode === 'height' && pdfCanvas.parentElement) {
-        const containerHeight = pdfCanvas.parentElement.clientHeight - 40;
+      } else if (fitMode === 'height') {
+        const containerHeight = pageContainer.clientHeight - 40;
         const baseViewport = page.getViewport({ scale: 1, rotation: rotateAngle });
         finalScale = containerHeight / baseViewport.height;
       }
@@ -222,23 +225,63 @@
       scale = finalScale;
       const viewport = page.getViewport({ scale: finalScale, rotation: rotateAngle });
       
-      pdfCanvas.height = viewport.height;
-      pdfCanvas.width = viewport.width;
-
-      const context = pdfCanvas.getContext("2d");
-      if (!context) {
-        error = "Canvas上下文初始化失败";
-        return;
+      // 清空现有内容
+      pageContainer.innerHTML = '';
+      
+      // 创建页面包装器
+      const pageWrapper = document.createElement('div');
+      pageWrapper.className = 'pdf-page-wrapper';
+      pageWrapper.style.position = 'relative';
+      pageWrapper.style.width = `${viewport.width}px`;
+      pageWrapper.style.height = `${viewport.height}px`;
+      pageWrapper.style.background = 'white';
+      pageWrapper.style.borderRadius = '8px';
+      pageWrapper.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+      pageWrapper.style.overflow = 'hidden';
+      
+      // 创建Canvas层（用于渲染PDF的视觉内容）
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.position = 'absolute';
+      canvas.style.top = '0';
+      canvas.style.left = '0';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.zIndex = '1';
+      
+      // 创建文本层容器
+      const textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'textLayer';
+      textLayerDiv.style.position = 'absolute';
+      textLayerDiv.style.top = '0';
+      textLayerDiv.style.left = '0';
+      textLayerDiv.style.width = '100%';
+      textLayerDiv.style.height = '100%';
+      textLayerDiv.style.zIndex = '2';
+      textLayerDiv.style.userSelect = 'text';
+      textLayerDiv.style.pointerEvents = 'auto';
+      
+      // 将canvas和文本层添加到页面包装器
+      pageWrapper.appendChild(canvas);
+      pageWrapper.appendChild(textLayerDiv);
+      pageContainer.appendChild(pageWrapper);
+      
+      // 渲染PDF到canvas
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+        }).promise;
       }
-      
-      context.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
-      context.fillStyle = "#ffffff";
-      context.fillRect(0, 0, pdfCanvas.width, pdfCanvas.height);
-      
-      await page.render({
-        canvasContext: context,
-        viewport: viewport,
-      }).promise;
+
+      // 渲染文本层
+      await renderTextLayer(page, viewport, textLayerDiv);
       
       if (error.includes("Canvas")) {
         error = "";
@@ -246,6 +289,110 @@
     } catch (e) {
       console.error("Failed to render page:", e);
       error = `无法渲染PDF页面 ${pageNum}: ${e}`;
+    }
+  }  async function renderTextLayer(page: any, viewport: any, textLayerDiv: HTMLElement) {
+    try {
+      // 获取文本内容
+      const textContent = await page.getTextContent();
+      
+      // 清空文本层容器
+      textLayerDiv.innerHTML = '';
+      
+      // 动态导入pdfjs-dist
+      const pdfjsLib = await import("pdfjs-dist");
+      
+      // 尝试使用PDF.js的TextLayer API
+      try {
+        if (pdfjsLib.TextLayer) {
+          const textLayer = new pdfjsLib.TextLayer({
+            textContentSource: textContent,
+            container: textLayerDiv,
+            viewport: viewport,
+          });
+          await textLayer.render();
+        } else {
+          // 回退到手动渲染
+          await renderTextLayerManually(textContent, textLayerDiv, viewport);
+        }
+      } catch (e) {
+        console.log("使用手动文本层渲染...", e);
+        await renderTextLayerManually(textContent, textLayerDiv, viewport);
+      }
+    } catch (e) {
+      console.error("文本层渲染失败:", e);
+      // 文本层渲染失败不影响PDF显示，只是无法选择文本
+    }
+  }
+
+  // 手动渲染文本层的改进版本
+  async function renderTextLayerManually(textContent: any, container: HTMLElement, viewport: any) {
+    try {
+      // 清空容器
+      container.innerHTML = '';
+      
+      // 设置容器样式
+      container.style.position = 'absolute';
+      container.style.left = '0px';
+      container.style.top = '0px';
+      container.style.right = '0px';
+      container.style.bottom = '0px';
+      container.style.overflow = 'hidden';
+      container.style.opacity = '1';
+      container.style.lineHeight = '1.0';
+      container.style.fontSize = '1px';
+      
+      // 遍历文本项目并创建span元素
+      textContent.items.forEach((item: any, index: number) => {
+        if (!item.str || item.str.trim() === '') return;
+        
+        const span = document.createElement('span');
+        span.textContent = item.str;
+        span.style.position = 'absolute';
+        span.style.whiteSpace = 'pre';
+        span.style.color = 'transparent';
+        span.style.cursor = 'text';
+        span.style.userSelect = 'text';
+        span.style.transformOrigin = '0% 0%';
+        
+        // 应用PDF.js的变换矩阵
+        if (item.transform && item.transform.length >= 6) {
+          const [scaleX, skewY, skewX, scaleY, translateX, translateY] = item.transform;
+          
+          // 设置位置
+          span.style.left = `${translateX}px`;
+          span.style.top = `${translateY}px`;
+          
+          // 设置字体大小（使用Y轴缩放作为字体大小）
+          const fontSize = Math.abs(scaleY);
+          span.style.fontSize = `${fontSize}px`;
+          
+          // 设置字体族（如果有的话）
+          if (item.fontName) {
+            span.style.fontFamily = item.fontName.replace(/[+]/g, ' ');
+          }
+          
+          // 应用完整的变换矩阵
+          if (scaleX !== 1 || skewY !== 0 || skewX !== 0 || scaleY !== 1) {
+            const matrix = `matrix(${scaleX}, ${skewY}, ${skewX}, ${scaleY}, 0, 0)`;
+            span.style.transform = matrix;
+          }
+          
+          // 设置宽度和高度以提高选择精度
+          if (item.width) {
+            span.style.width = `${item.width}px`;
+          }
+          if (item.height) {
+            span.style.height = `${Math.abs(scaleY)}px`;
+          }
+        }
+        
+        // 添加数据属性以便调试
+        span.setAttribute('data-text-index', index.toString());
+        
+        container.appendChild(span);
+      });
+    } catch (e) {
+      console.error("手动文本层渲染失败:", e);
     }
   }
 
@@ -284,7 +431,6 @@
     fitMode = mode;
     await renderPage(currentPage);
   }
-
   async function rotate() {
     rotateAngle = (rotateAngle + 90) % 360;
     await renderPage(currentPage);
@@ -334,7 +480,19 @@
       isSearching = false;
     }
   }
-
+  // 复制选中的文本到剪贴板
+  async function copySelectedText() {
+    try {
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim()) {
+        await navigator.clipboard.writeText(selection.toString());
+        // 可以添加一个提示消息
+        console.log('文本已复制到剪贴板');
+      }
+    } catch (e) {
+      console.error('复制文本失败:', e);
+    }
+  }
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       onClose();
@@ -350,6 +508,19 @@
       goToPage(1);
     } else if (event.key === "End") {
       goToPage(totalPages);
+    } else if (event.ctrlKey && event.key === "c") {
+      // Ctrl+C 复制选中文本
+      copySelectedText();    } else if (event.ctrlKey && event.key === "a") {
+      // Ctrl+A 全选当前页面文本
+      event.preventDefault();
+      const textLayer = document.querySelector('.textLayer');
+      if (textLayer) {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(textLayer);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
     }
   }
 
@@ -580,10 +751,15 @@
               <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
             </svg>
           </button>
-          
-          <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
+            <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
+            </svg>
+          </button>
+          
+          <button onclick={copySelectedText} class="icon-btn" aria-label="复制选中文本">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
             </svg>
           </button>
         </div>
@@ -762,9 +938,7 @@
             {/if}
           </div>
         </div>
-      {/if}
-
-      <!-- PDF内容区域 -->
+      {/if}      <!-- PDF内容区域 -->
       <div 
         class="pdf-content" 
         onwheel={handleWheel}
@@ -787,8 +961,8 @@
             </button>
           </div>
         {:else}
-          <div class="pdf-canvas-container">
-            <canvas bind:this={pdfCanvas} class="pdf-canvas"></canvas>
+          <div id="pdfPageContainer" class="pdf-page-container">
+            <!-- PDF页面将在这里动态创建 -->
           </div>
         {/if}
       </div>
@@ -1702,7 +1876,6 @@
     background: #cbd5e1;
     border-radius: 4px;
   }
-
   .pdf-canvas-container {
     background: white;
     border-radius: 12px;
@@ -1725,6 +1898,32 @@
     display: block;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 新的PDF页面容器样式 */
+  .pdf-page-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+    min-height: 100%;
+  }
+
+  .pdf-page-wrapper {
+    position: relative;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 
+      0 20px 25px -5px rgba(0, 0, 0, 0.1),
+      0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    transition: all 0.3s ease;
+    overflow: hidden;
+  }
+
+  .pdf-page-wrapper:hover {
+    box-shadow: 
+      0 25px 50px -12px rgba(0, 0, 0, 0.15),
+      0 20px 20px -5px rgba(0, 0, 0, 0.06);
   }
 
   /* 加载和错误状态 */
@@ -1808,6 +2007,96 @@
   }
 
   /* 响应式设计 */
+  @media (max-width: 768px) {
+    .pdf-viewer {
+      height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    }
+
+    .pdf-toolbar {
+      padding: 8px 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pdf-toolbar h2 {
+      font-size: 14px;
+      margin-right: 8px;
+    }
+
+    .toolbar-group {
+      gap: 4px;
+    }
+
+    .toolbar-btn {
+      padding: 6px 8px;
+      font-size: 12px;
+      min-width: 32px;
+    }
+
+    .sidebar {
+      width: 280px;
+    }
+
+    .pdf-content {
+      padding: 12px;
+    }
+
+    .pdf-canvas-container {
+      padding: 12px;
+    }
+
+    .thumbnail-grid {
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 8px;
+    }
+
+    .search-panel, .bookmarks-panel {
+      padding: 12px;
+    }
+  }
+
+  /* 文本层样式 - 支持文本选择 */
+  :global(.textLayer) {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    opacity: 1;
+    line-height: 1.0;
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+  }
+
+  :global(.textLayer span) {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+  }
+
+  :global(.textLayer span::selection) {
+    background: rgba(0, 100, 255, 0.3);
+  }
+
+  :global(.textLayer span::-moz-selection) {
+    background: rgba(0, 100, 255, 0.3);
+  }
+
+  /* 搜索高亮样式 */
+  :global(.textLayer .highlight) {
+    background: rgba(255, 255, 0, 0.6);
+    border-radius: 2px;
+  }
+
+  :global(.textLayer .highlight.selected) {
+    background: rgba(255, 165, 0, 0.6);
+  }
   @media (max-width: 768px) {
     .pdf-viewer-modal {
       width: 100vw;
