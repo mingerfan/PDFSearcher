@@ -18,12 +18,12 @@
   // 侧边栏状态
   let showSidebar = $state(true);
   let sidebarTab = $state<'thumbnails' | 'search' | 'bookmarks'>('thumbnails');
-  
-  // 缩略图状态
+    // 缩略图状态
   let thumbnails = $state<Array<{
     pageNum: number;
     canvas: HTMLCanvasElement;
     loaded: boolean;
+    aspectRatio: number;
   }>>([]);
   let thumbnailsContainer = $state<HTMLDivElement>();
   
@@ -108,14 +108,16 @@
         thumbnails.push({
           pageNum: i,
           canvas: canvas,
-          loaded: true
+          loaded: true,
+          aspectRatio: viewport.width / viewport.height
         });
       } catch (e) {
         console.error(`Failed to generate thumbnail for page ${i}:`, e);
         thumbnails.push({
           pageNum: i,
           canvas: document.createElement('canvas'),
-          loaded: false
+          loaded: false,
+          aspectRatio: 3/4
         });
       }
     }
@@ -125,7 +127,8 @@
       thumbnails.push({
         pageNum: i,
         canvas: document.createElement('canvas'),
-        loaded: false
+        loaded: false,
+        aspectRatio: 3/4
       });
     }
   }
@@ -306,7 +309,7 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<div class="pdf-viewer-overlay" onclick={onClose} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && onClose()}>
+<div class="pdf-viewer-overlay" onclick={onClose} role="button" tabindex="0">
   <div class="pdf-viewer-modal" onclick={(e) => e.stopPropagation()} role="dialog" tabindex="-1">
     <!-- 顶部工具栏 -->
     <div class="pdf-header">
@@ -460,8 +463,7 @@
 
           <div class="sidebar-content">
             {#if sidebarTab === 'thumbnails'}
-              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>
-                {#each thumbnails as thumbnail}
+              <div class="thumbnails-grid" bind:this={thumbnailsContainer}>                {#each thumbnails as thumbnail}
                   <div 
                     class="thumbnail-item" 
                     class:active={thumbnail.pageNum === currentPage}
@@ -471,7 +473,10 @@
                     title="跳转到第 {thumbnail.pageNum} 页"
                   >
                     {#if thumbnail.loaded}
-                      <div class="thumbnail-canvas-wrapper">
+                      <div 
+                        class="thumbnail-canvas-wrapper"
+                        style="aspect-ratio: {thumbnail.aspectRatio}"
+                      >
                         <canvas
                           data-page={thumbnail.pageNum}
                           width={thumbnail.canvas.width}
@@ -481,7 +486,10 @@
                         ></canvas>
                       </div>
                     {:else}
-                      <div class="thumbnail-placeholder">
+                      <div 
+                        class="thumbnail-placeholder"
+                        style="aspect-ratio: {thumbnail.aspectRatio}"
+                      >
                         <div class="thumbnail-loading">
                           <div class="spinner small"></div>
                         </div>
@@ -962,12 +970,9 @@
   .thumbnail-item.active {
     border-color: #667eea;
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-  }
-
-  .thumbnail-canvas-wrapper {
+  }  .thumbnail-canvas-wrapper {
     position: relative;
     width: 100%;
-    padding-bottom: 141%; /* A4 ratio */
     overflow: hidden;
     border-radius: 4px;
     background: #f8fafc;
@@ -981,10 +986,8 @@
     height: 100%;
     object-fit: contain;
   }
-
   .thumbnail-placeholder {
     width: 100%;
-    padding-bottom: 141%;
     background: #f1f5f9;
     border-radius: 4px;
     position: relative;
