@@ -218,7 +218,7 @@
       {#each results as result}
         <div class="result-item">
           <div class="result-header">
-            <span class="file-path">{result.file_path}</span>
+            <span class="file-path">{result.file_path.split("\\").pop()}</span>
             <div class="file-info">
               <span class="file-size">{formatFileSize(result.file_size)}</span>
               {#if result.page_number}
