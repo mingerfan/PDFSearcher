@@ -88,7 +88,8 @@
     let defaultAspectRatio = 3/4; // fallback
     try {
       const firstPage = await pdfDoc.getPage(1);
-      const firstViewport = firstPage.getViewport({ scale: 1 });
+      const pageRotation = firstPage.rotate || 0;
+      const firstViewport = firstPage.getViewport({ scale: 1, rotation: pageRotation });
       defaultAspectRatio = firstViewport.width / firstViewport.height;
     } catch (e) {
       console.error("Failed to get default aspect ratio:", e);
@@ -116,26 +117,28 @@
         await generateRemainingThumbnails(initialBatch, Math.min(50, totalPages));
       }, 100);
     }
-  }
-  async function generateSingleThumbnail(index: number) {
+  }async function generateSingleThumbnail(index: number) {
     if (!pdfDoc || !thumbnails[index] || thumbnails[index].loaded) return;
     
     try {
       const pageNum = thumbnails[index].pageNum;
       const page = await pdfDoc.getPage(pageNum);
       
+      // Get the page's natural rotation and viewport
+      const pageRotation = page.rotate || 0;
+      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
+      
       // Calculate proper thumbnail scale - aim for max 200px width or height
-      const baseViewport = page.getViewport({ scale: 1 });
       const maxDimension = 200;
       const thumbnailScale = Math.min(
         maxDimension / baseViewport.width,
         maxDimension / baseViewport.height
       );
       
-      // Get viewport with proper scale and no rotation for thumbnails
+      // Get viewport with proper scale and correct rotation
       const viewport = page.getViewport({ 
         scale: thumbnailScale,
-        rotation: 0  // Always use 0 rotation for consistent thumbnails
+        rotation: (pageRotation + rotateAngle) % 360  // 合并页面原始旋转和当前旋转角度
       });
       
       const canvas = thumbnails[index].canvas;
@@ -151,19 +154,20 @@
         context.fillStyle = '#ffffff';
         context.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Set rendering quality
+        // Set high quality rendering
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = 'high';
         
+        // Render the page
         await page.render({
           canvasContext: context,
           viewport: viewport,
         }).promise;
       }
       
-      // Calculate aspect ratio based on base dimensions (not scaled)
+      // Calculate aspect ratio based on rendered dimensions
       thumbnails[index].loaded = true;
-      thumbnails[index].aspectRatio = baseViewport.width / baseViewport.height;
+      thumbnails[index].aspectRatio = viewport.width / viewport.height;
       
       // 触发响应式更新
       thumbnails = [...thumbnails];
@@ -284,6 +288,8 @@
   async function rotate() {
     rotateAngle = (rotateAngle + 90) % 360;
     await renderPage(currentPage);
+    // 重新生成缩略图以反映新的旋转状态
+    await generateThumbnails();
   }
 
   function toggleSidebar() {
@@ -360,42 +366,39 @@
   function renderThumbnailCanvas(canvas: HTMLCanvasElement, sourceCanvas: HTMLCanvasElement) {
     if (!sourceCanvas || !canvas) return;
     
-    // Set canvas size to match source
-    canvas.width = sourceCanvas.width;
-    canvas.height = sourceCanvas.height;
-    
-    const ctx = canvas.getContext('2d');
-    if (ctx && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
-      // Clear the canvas first
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function renderCanvas() {
+      if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       
-      // Set rendering quality
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
+      // Set the display canvas size to match the source canvas
+      canvas.width = sourceCanvas.width;
+      canvas.height = sourceCanvas.height;
       
-      // Draw the source canvas
-      ctx.drawImage(sourceCanvas, 0, 0);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Set high quality rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Set white background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw the source canvas
+        ctx.drawImage(sourceCanvas, 0, 0);
+      }
     }
+    
+    // Initial render
+    renderCanvas();
     
     return {
       update(newSourceCanvas: HTMLCanvasElement) {
-        if (!newSourceCanvas || !canvas) return;
-        
-        // Update canvas size
-        canvas.width = newSourceCanvas.width;
-        canvas.height = newSourceCanvas.height;
-        
-        const ctx = canvas.getContext('2d');
-        if (ctx && newSourceCanvas.width > 0 && newSourceCanvas.height > 0) {
-          // Clear the canvas first
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          
-          // Set rendering quality
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          
-          // Draw the updated source canvas
-          ctx.drawImage(newSourceCanvas, 0, 0);
+        if (newSourceCanvas) {
+          sourceCanvas = newSourceCanvas;
+          renderCanvas();
         }
       }
     };
@@ -411,7 +414,7 @@
             
             if (thumbnail && !thumbnail.loaded) {
               // Add loading indicator
-              const loadingEl = entry.target.querySelector('.thumbnail-loading');
+              const loadingEl = entry.target.querySelector('.thumbnail-loading') as HTMLElement;
               if (loadingEl) {
                 loadingEl.style.display = 'flex';
               }
@@ -616,17 +619,14 @@
                     tabindex="0"
                     title="跳转到第 {thumbnail.pageNum} 页"
                     use:lazyLoadThumbnail={index}
-                  >
-                    {#if thumbnail.loaded}
+                  >                    {#if thumbnail.loaded}
                       <div 
                         class="thumbnail-canvas-wrapper"
                         style="aspect-ratio: {thumbnail.aspectRatio}"
                       >
                         <canvas
                           data-page={thumbnail.pageNum}
-                          width={thumbnail.canvas.width}
-                          height={thumbnail.canvas.height}
-                          style="width: 100%; height: auto;"
+                          style="width: 100%; height: 100%; object-fit: contain; background: white;"
                           use:renderThumbnailCanvas={thumbnail.canvas}
                         ></canvas>
                       </div>
@@ -1130,15 +1130,16 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-  }
-  .thumbnail-placeholder {
+  }  .thumbnail-placeholder {
     width: 100%;
-    background: #f1f5f9;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
     border-radius: 4px;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
+    border: 1px solid #e2e8f0;
+    min-height: 80px;
   }
 
   .thumbnail-loading {
@@ -1146,6 +1147,29 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .thumbnail-canvas-wrapper {
+    width: 100%;
+    position: relative;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .thumbnail-canvas-wrapper canvas {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    background: white;
+    border-radius: 3px;
   }
 
   .thumbnail-label {
