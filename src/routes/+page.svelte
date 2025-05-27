@@ -7,8 +7,12 @@
 
   let folderPath = $state("");
   let keyword = $state("");
+  type PageInfoMatched = {
+    page_number: number,
+    matched_text: string,
+  };
   let results = $state<
-    Array<{ file_path: string; matched_text: string; file_size: number; page_number?: number }>
+    Array<{ file_path: string; file_size: number; page_info: PageInfoMatched[] }>
   >([]);
   let searching = $state(false);
   let error = $state("");
@@ -284,12 +288,12 @@
                   {result.file_path.split("\\").pop()}
                 </h4>
                 <div class="file-meta">
-                  {#if result.page_number}
+                  <!-- {#if result.page_number}
                     <span class="page-number">
                       <span class="meta-icon">📖</span>
                       第 {result.page_number} 页
                     </span>
-                  {/if}
+                  {/if} -->
                 </div>
               </div>
               
@@ -310,14 +314,14 @@
                 
                 <button 
                   class="action-btn viewer-btn"
-                  onclick={() => openPDFViewer(result.file_path, result.page_number)}
+                  onclick={() => openPDFViewer(result.file_path, result.page_info?.at(0)?.page_number)}
                   title="在应用内查看PDF"
                 >
                   <span class="btn-icon">👁️</span>
                   <span class="btn-text">内置查看</span>
                 </button>
                 
-                {#if result.page_number}
+                <!-- {#if result.page_number}
                   <button 
                     class="action-btn page-btn"
                     onclick={() => openPDFAtPage(result.file_path, result.page_number)}
@@ -326,7 +330,7 @@
                     <span class="btn-icon">🎯</span>
                     <span class="btn-text">跳转页面</span>
                   </button>
-                {/if}
+                {/if} -->
               </div>
             </div>
             
@@ -335,7 +339,7 @@
                 <span class="content-icon">💡</span>
                 <span class="content-title">匹配内容</span>
               </div>
-              <div class="matched-text">{result.matched_text}</div>
+              <div class="matched-text">{result.page_info?.at(0)?.matched_text}</div>
             </div>
           </div>
         {/each}
@@ -388,16 +392,6 @@
     max-width: 1200px;
   }
 
-  h1 {
-    text-align: center;
-    margin-bottom: 1.5rem;
-    color: white;
-    font-size: 2rem;
-    font-weight: 700;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    letter-spacing: -0.02em;
-  }
-
   .search-form {
     background: white;
     border-radius: 16px;
@@ -436,12 +430,6 @@
 
   .icon {
     font-size: 0.875rem;
-  }
-
-  .divider {
-    height: 1px;
-    background: linear-gradient(90deg, transparent, #e5e7eb, transparent);
-    margin: 0.5rem 0;
   }
 
   .folder-select {
@@ -1122,11 +1110,6 @@
       gap: 1rem;
     }
 
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 2rem;
-    }
-
     .search-form {
       padding: 1.5rem;
       border-radius: 16px;
@@ -1140,17 +1123,6 @@
       flex-direction: column;
       align-items: flex-start;
     }
-
-    .file-info {
-      width: 100%;
-      justify-content: space-between;
-    }
-
-    .button-group {
-      width: 100%;
-      justify-content: flex-end;
-    }
-
     .toast {
       top: 10px;
       right: 10px;
@@ -1170,10 +1142,6 @@
       background: rgba(55, 65, 81, 0.6);
       color: #d1d5db;
       border-color: rgba(75, 85, 99, 0.6);
-    }
-
-    .search-input label {
-      color: #d1d5db;
     }
 
     input[type="text"] {
