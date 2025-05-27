@@ -947,36 +947,12 @@
     box-shadow: 0 8px 25px rgba(6, 182, 212, 0.4);
   }
 
-  .page-btn {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-  }
-
-  .page-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #059669 0%, #047857 100%);
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
-  }
-
   .btn-icon {
     font-size: 0.75rem;
   }
 
   .btn-text {
     font-size: 0.8rem;
-  }
-
-  .page-number {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: #6366f1;
-    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
-    padding: 0.5rem 1rem;
-    border-radius: 12px;
-    font-weight: 600;
-    border: 1px solid #c7d2fe;
   }
 
   .file-size {
