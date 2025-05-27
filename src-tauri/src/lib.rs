@@ -87,7 +87,7 @@ fn search_in_pdf(file_path: &str, keyword: &str) -> Result<Option<SearchResult>>
         };
 
         // 尝试找到页码 - 使用精确检测
-        let page_number = find_exact_page_number(file_path, &keyword)
+        let page_number = find_exact_page_number(file_path, keyword)
             .or_else(|| estimate_page_number(&text, &context));
 
         Ok(Some(SearchResult {
@@ -245,8 +245,10 @@ async fn search_pdfs(
     });
 
     // 提取最终结果
-    let final_results = results.lock().unwrap().clone();
-    
+    let mut final_results = results.lock().unwrap().clone();
+    final_results.sort_by(|a, b| {
+        a.file_path.cmp(&b.file_path).then(a.page_number.cmp(&b.page_number))
+    });
     Ok(final_results)
 }
 
@@ -316,7 +318,10 @@ async fn search_pdfs_advanced(
         }
     });
 
-    let final_results = results.lock().unwrap().clone();
+    let mut final_results = results.lock().unwrap().clone();
+    final_results.sort_by(|a, b| {
+        a.file_path.cmp(&b.file_path).then(a.page_number.cmp(&b.page_number))
+    });
     Ok(final_results)
 }
 
@@ -385,7 +390,7 @@ fn get_pdf_page_count(file_path: &str) -> Result<u32> {
 fn estimate_page_number(full_text: &str, matched_line: &str) -> Option<u32> {
     let lines: Vec<&str> = full_text.lines().collect();
     for (i, line) in lines.iter().enumerate() {
-        if line.to_lowercase().contains(&matched_line.to_lowercase().trim()) {
+        if line.to_lowercase().contains(matched_line.to_lowercase().trim()) {
             // 假设每页大约40行文本
             let estimated_page = (i / 40) + 1;
             return Some(estimated_page as u32);
@@ -394,34 +399,14 @@ fn estimate_page_number(full_text: &str, matched_line: &str) -> Option<u32> {
     None
 }
 
-// 基于总页数的更精确估算
-fn estimate_page_number_with_total(file_path: &str, matched_text: &str, total_pages: u32) -> Option<u32> {
-    if let Ok(full_text) = extract_text(file_path) {
-        let total_chars = full_text.len();
-        if total_chars == 0 { return None; }
-        
-        // 找到匹配文本的位置
-        let matched_line = matched_text.lines().next().unwrap_or("").trim();
-        if let Some(pos) = full_text.to_lowercase().find(&matched_line.to_lowercase()) {
-            // 基于字符位置估算页码
-            let ratio = pos as f32 / total_chars as f32;
-            let estimated_page = ((ratio * total_pages as f32).ceil() as u32).max(1);
-            return Some(estimated_page.min(total_pages));
-        }
-    }
-    None
-}
-
 // 打开PDF到指定页码的命令
 #[tauri::command]
 async fn open_pdf_at_page(file_path: String, page_number: Option<u32>) -> Result<(), String> {
-    // 使用tauri_plugin_opener来打开文件
-    use tauri_plugin_opener::OpenerExt;
     
     // 获取应用句柄 - 这需要从调用上下文中传递
     // 对于现在，我们使用标准的文件关联打开
     match std::process::Command::new("cmd")
-        .args(&["/c", "start", "", &file_path])
+        .args(["/c", "start", "", &file_path])
         .spawn()
     {
         Ok(_) => {
