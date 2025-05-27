@@ -238,16 +238,18 @@
       pageWrapper.style.borderRadius = '8px';
       pageWrapper.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
       pageWrapper.style.overflow = 'hidden';
-      
-      // 创建Canvas层（用于渲染PDF的视觉内容）
+        // 创建Canvas层（用于渲染PDF的视觉内容）
       const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      
+      // 设置高分辨率渲染
+      canvas.width = viewport.width * devicePixelRatio;
+      canvas.height = viewport.height * devicePixelRatio;
       canvas.style.position = 'absolute';
       canvas.style.top = '0';
       canvas.style.left = '0';
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
       canvas.style.zIndex = '1';
       
       // 创建文本层容器
@@ -266,13 +268,19 @@
       pageWrapper.appendChild(canvas);
       pageWrapper.appendChild(textLayerDiv);
       pageContainer.appendChild(pageWrapper);
-      
-      // 渲染PDF到canvas
+        // 渲染PDF到canvas
       const context = canvas.getContext("2d");
       if (context) {
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        // 缩放上下文以匹配设备像素比
+        context.scale(devicePixelRatio, devicePixelRatio);
+        
+        // 设置高质量渲染
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
+        
+        context.clearRect(0, 0, viewport.width, viewport.height);
         context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillRect(0, 0, viewport.width, viewport.height);
         
         await page.render({
           canvasContext: context,
@@ -323,7 +331,6 @@
       // 文本层渲染失败不影响PDF显示，只是无法选择文本
     }
   }
-
   // 手动渲染文本层的改进版本
   async function renderTextLayerManually(textContent: any, container: HTMLElement, viewport: any) {
     try {
@@ -353,6 +360,7 @@
         span.style.cursor = 'text';
         span.style.userSelect = 'text';
         span.style.transformOrigin = '0% 0%';
+        span.style.pointerEvents = 'auto';
         
         // 应用PDF.js的变换矩阵
         if (item.transform && item.transform.length >= 6) {
@@ -377,17 +385,26 @@
             span.style.transform = matrix;
           }
           
-          // 设置宽度和高度以提高选择精度
-          if (item.width) {
+          // 设置精确的宽度和高度以提高选择精度
+          if (item.width && item.width > 0) {
             span.style.width = `${item.width}px`;
+            span.style.minWidth = `${item.width}px`;
+            span.style.maxWidth = `${item.width}px`;
           }
-          if (item.height) {
-            span.style.height = `${Math.abs(scaleY)}px`;
+          if (fontSize > 0) {
+            span.style.height = `${fontSize}px`;
+            span.style.minHeight = `${fontSize}px`;
+            span.style.maxHeight = `${fontSize}px`;
           }
+          
+          // 添加边界框以提高选择精度
+          span.style.boxSizing = 'border-box';
+          span.style.overflow = 'hidden';
         }
         
         // 添加数据属性以便调试
         span.setAttribute('data-text-index', index.toString());
+        span.setAttribute('data-text-content', item.str);
         
         container.appendChild(span);
       });
@@ -699,14 +716,13 @@
       </div>
       
       <div class="header-right">
-        <div class="view-controls">
-          <button onclick={toggleSidebar} class="icon-btn" class:active={showSidebar} aria-label="切换侧边栏">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <div class="view-controls">          <button onclick={toggleSidebar} class="icon-btn" class:active={showSidebar} aria-label="切换侧边栏">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16 0h2v-2h-2v2zm0-10v2h2V7h-2zm0 6h2v-2h-2v2z"/>
             </svg>
           </button>
             <button onclick={zoomOut} class="icon-btn" aria-label="缩小">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13H5v-2h14v2z"/>
             </svg>
           </button>
@@ -714,7 +730,7 @@
           <span class="zoom-display">{Math.round(scale * 100)}%</span>
           
           <button onclick={zoomIn} class="icon-btn" aria-label="放大">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
             </svg>
           </button>
@@ -745,21 +761,13 @@
               页面
             </button>
           </div>
-          
-          <button onclick={rotate} class="icon-btn" aria-label="旋转90度">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <button onclick={rotate} class="icon-btn" aria-label="旋转90度">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8c-.45-.83-.7-1.79-.7-2.8 0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
             </svg>
-          </button>
-            <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          </button>          <button onclick={addBookmark} class="icon-btn" aria-label="添加书签">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-            </svg>
-          </button>
-          
-          <button onclick={copySelectedText} class="icon-btn" aria-label="复制选中文本">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
             </svg>
           </button>
         </div>
@@ -1283,21 +1291,20 @@
     align-items: center;
     gap: 10px;
   }
-
   .icon-btn {
     background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.12));
     color: white;
     border: none;
-    border-radius: 10px;
-    padding: 10px;
+    border-radius: 8px;
+    padding: 8px;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(12px);
-    min-width: 40px;
-    height: 40px;
+    min-width: 32px;
+    height: 32px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 
       0 4px 12px rgba(0, 0, 0, 0.1),
@@ -2054,7 +2061,6 @@
       padding: 12px;
     }
   }
-
   /* 文本层样式 - 支持文本选择 */
   :global(.textLayer) {
     position: absolute;
@@ -2070,6 +2076,7 @@
     -webkit-user-select: text;
     -moz-user-select: text;
     -ms-user-select: text;
+    z-index: 2;
   }
 
   :global(.textLayer span) {
@@ -2078,14 +2085,25 @@
     white-space: pre;
     cursor: text;
     transform-origin: 0% 0%;
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    /* 提高选择精度的样式 */
+    display: inline-block;
+    vertical-align: baseline;
+    box-sizing: border-box;
   }
 
   :global(.textLayer span::selection) {
     background: rgba(0, 100, 255, 0.3);
+    color: transparent;
   }
 
   :global(.textLayer span::-moz-selection) {
     background: rgba(0, 100, 255, 0.3);
+    color: transparent;
   }
 
   /* 搜索高亮样式 */
