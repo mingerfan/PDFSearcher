@@ -477,17 +477,44 @@
     searchResults = [];
     
     try {
+      const searchRegex = new RegExp(searchText.toLowerCase(), 'g');
+      const contextLength = 20; // 匹配项前后各保留的字符数
+      
       for (let i = 1; i <= totalPages; i++) {
         const page = await pdfDoc.getPage(i);
         const textContent = await page.getTextContent();
         const text = textContent.items.map((item: any) => item.str).join(' ');
-        const matches = (text.toLowerCase().match(new RegExp(searchText.toLowerCase(), 'g')) || []).length;
+        const textLower = text.toLowerCase();
         
-        if (matches > 0) {
+        // 查找所有匹配项
+        const matches: { index: number; text: string }[] = [];
+        let match;
+        
+        while ((match = searchRegex.exec(textLower)) !== null) {
+          const matchIndex = match.index;
+          
+          // 提取匹配项的上下文
+          const start = Math.max(0, matchIndex - contextLength);
+          const end = Math.min(text.length, matchIndex + searchText.length + contextLength);
+          
+          // 添加省略号标记
+          const prefix = start > 0 ? '...' : '';
+          const suffix = end < text.length ? '...' : '';
+          
+          // 获取上下文文本
+          const contextText = prefix + text.substring(start, end) + suffix;
+          
+          matches.push({
+            index: matchIndex,
+            text: contextText
+          });
+        }
+        
+        if (matches.length > 0) {
           searchResults.push({
             pageNum: i,
-            matches: matches,
-            text: text.substring(0, 200) + '...'
+            matches: matches.length,
+            text: matches.map(m => m.text).join('\n\n') // 如果有多个匹配项，用换行分隔
           });
         }
       }
@@ -1112,13 +1139,13 @@
     color: white;
     border: none;
     border-radius: 12px;
-    padding: 10px 16px;
+    padding: 8px 12px;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 6px;
+    font-size: 10px;
     font-weight: 500;
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.15);
