@@ -312,12 +312,12 @@
       
       // 获取基础viewport用于计算缩放比例
       const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
-      
-      // 计算适合的缩放比例，确保缩略图不会太大
-      const maxDimension = 120; // 最大边长
+        // 计算适合的缩放比例，确保缩略图适合容器
+      const maxWidth = 80; // 容器最大宽度
+      const maxHeight = 60; // 容器最大高度
       const scale = Math.min(
-        maxDimension / baseViewport.width,
-        maxDimension / baseViewport.height
+        maxWidth / baseViewport.width,
+        maxHeight / baseViewport.height
       );
       
       // 应用缩放的最终viewport
@@ -1291,20 +1291,6 @@
     color: #374151;
   }
 
-  .matched-text {
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    padding: 1.25rem;
-    border-left: 4px solid #6366f1;
-    border-radius: 12px;
-    font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace;
-    font-size: 0.9rem;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
-    border: 1px solid #e2e8f0;
-    color: #374151;
-  }
-
   .no-results {
     text-align: center;
     margin-top: 4rem;
@@ -1372,17 +1358,6 @@
     min-height: 80px;
   }
 
-  .thumbnail-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-  }
-
   /* 缩略图网格 */
   .thumbnails-grid {
     padding: 16px;
@@ -1406,15 +1381,19 @@
     background: #cbd5e1;
     border-radius: 3px;
   }
-
   .thumbnail-item {
     background: white;
     border-radius: 8px;
-    padding: 8px;
+    padding: 4px;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 2px solid transparent;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 88px;
+    height: 68px;
   }
 
   @keyframes slideInRight {
@@ -1491,12 +1470,6 @@
     .file-path {
       color: #e5e7eb;
     }
-
-    .matched-text {
-      background: rgba(31, 41, 55, 0.6);
-      color: #e5e7eb;
-      border-left-color: #6366f1;
-    }
   }
 
   /* 加载动画 */
@@ -1521,44 +1494,5 @@
   .search-form:hover {
     transform: translateY(-2px);
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
-  }
-
-  /* 缩略图样式 */
-  .thumbnail-canvas {
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .thumbnail-placeholder {
-    width: 120px;
-    height: 80px;
-    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid #e2e8f0;
-  }
-
-  .placeholder-text {
-    color: #6b7280;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-
-  /* Toast样式 */
-  .toast {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
-    z-index: 1000;
-    animation: slideInRight 0.3s ease-out;
   }
 </style>
