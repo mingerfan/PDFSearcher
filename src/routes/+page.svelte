@@ -8,13 +8,17 @@
   let folderPath = $state("");
   let keyword = $state("");
   type PageInfoMatched = {
-    page_number: number,
-    matched_text: string,
-    canvas: HTMLCanvasElement,
-    loaded: boolean,
+    page_number: number;
+    matched_text: string;
+    canvas?: HTMLCanvasElement;
+    loaded?: boolean;
   };
   let results = $state<
-    Array<{ file_path: string; file_size: number; page_info: PageInfoMatched[] }>
+    Array<{
+      file_path: string;
+      file_size: number;
+      page_info: PageInfoMatched[];
+    }>
   >([]);
   let searching = $state(false);
   let error = $state("");
@@ -28,7 +32,7 @@
     message: "",
     visible: false,
   });
-  
+
   // PDF查看器状态
   let pdfViewer = $state<{
     visible: boolean;
@@ -104,18 +108,18 @@
         filePath: path,
         pageNumber: page,
       });
-      
+
       // 显示页码提示
       if (page) {
         pageToast = {
           message: `PDF已打开，建议导航到第 ${page} 页`,
           visible: true,
         };
-        
-        // 3秒后隐藏提示
+
+        // 5秒后隐藏提示
         setTimeout(() => {
           pageToast = { ...pageToast, visible: false };
-        }, 3000);
+        }, 5000);
       }
     } catch (e) {
       error = e as string;
@@ -151,202 +155,204 @@
 
 <main class="app-layout">
   <div class="container">
-  <div class="search-form">
-    <div class="form-header">
-      <div class="form-section">
-        <h3 class="section-title">
-          <span class="icon">📁</span>
-          选择搜索目录
-        </h3>
-        <div class="folder-select">
-          <button onclick={selectFolder} class="folder-button">
-            <span class="button-icon">📂</span>
-            选择文件夹
-          </button>
-          {#if folderPath}
-            <div class="folder-path">
-              <span class="path-icon">📍</span>
-              {folderPath}
-            </div>
-          {/if}
+    <div class="search-form">
+      <div class="form-header">
+        <div class="form-section">
+          <h3 class="section-title">
+            <span class="icon">📁</span>
+            选择搜索目录
+          </h3>
+          <div class="folder-select">
+            <button onclick={selectFolder} class="folder-button">
+              <span class="button-icon">📂</span>
+              选择文件夹
+            </button>
+            {#if folderPath}
+              <div class="folder-path">
+                <span class="path-icon">📍</span>
+                {folderPath}
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3 class="section-title">
+            <span class="icon">🔍</span>
+            搜索设置
+          </h3>
+          <label class="advanced-toggle">
+            <input type="checkbox" bind:checked={useAdvancedSearch} />
+            <span class="toggle-slider"></span>
+            <span class="toggle-text">
+              <strong>高级搜索</strong>
+              <small>支持多关键词，用逗号分隔</small>
+            </span>
+          </label>
         </div>
       </div>
 
-      <div class="form-section">
-        <h3 class="section-title">
-          <span class="icon">🔍</span>
-          搜索设置
-        </h3>
-        <label class="advanced-toggle">
-          <input type="checkbox" bind:checked={useAdvancedSearch} />
-          <span class="toggle-slider"></span>
-          <span class="toggle-text">
-            <strong>高级搜索</strong>
-            <small>支持多关键词，用逗号分隔</small>
-          </span>
-        </label>
-      </div>
+      <form class="search-input" onsubmit={searchPDFs}>
+        <div class="input-group">
+          <div class="search-input-wrapper">
+            <span class="search-icon">🔍</span>
+            <input
+              type="text"
+              placeholder={useAdvancedSearch
+                ? "输入搜索关键词，用逗号分隔..."
+                : "输入搜索关键词..."}
+              bind:value={keyword}
+              disabled={searching}
+            />
+          </div>
+          <button type="submit" disabled={searching} class="search-button">
+            <span class="button-content">
+              {#if searching}
+                <span class="spinner"></span>
+                搜索中...
+              {:else}
+                <span class="button-icon">🚀</span>
+                开始搜索
+              {/if}
+            </span>
+          </button>
+        </div>
+      </form>
+
+      {#if searching && searchProgress}
+        <div class="progress-container">
+          <div class="progress-header">
+            <h4 class="progress-title">
+              <span class="progress-icon">⚡</span>
+              搜索进行中
+            </h4>
+          </div>
+          <div class="progress-info">
+            <div class="progress-stats">
+              <span class="stat-item">
+                <span class="stat-number">{searchProgress.current}</span>
+                <span class="stat-label">已处理</span>
+              </span>
+              <span class="stat-divider">/</span>
+              <span class="stat-item">
+                <span class="stat-number">{searchProgress.total}</span>
+                <span class="stat-label">总计</span>
+              </span>
+            </div>
+            <div class="current-file">
+              <span class="file-icon">📄</span>
+              {searchProgress.current_file.split("\\").pop()}
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div
+              class="progress-fill"
+              style="width: {(searchProgress.current / searchProgress.total) *
+                100}%"
+            ></div>
+          </div>
+          <div class="progress-percentage">
+            {Math.round((searchProgress.current / searchProgress.total) * 100)}%
+          </div>
+        </div>
+      {/if}
     </div>
 
-    <form class="search-input" onsubmit={searchPDFs}>
-      <div class="input-group">
-        <div class="search-input-wrapper">
-          <span class="search-icon">🔍</span>
-          <input
-            type="text"
-            placeholder={useAdvancedSearch
-              ? "输入搜索关键词，用逗号分隔..."
-              : "输入搜索关键词..."}
-            bind:value={keyword}
-            disabled={searching}
-          />
-        </div>
-        <button type="submit" disabled={searching} class="search-button">
-          <span class="button-content">
-            {#if searching}
-              <span class="spinner"></span>
-              搜索中...
-            {:else}
-              <span class="button-icon">🚀</span>
-              开始搜索
-            {/if}
-          </span>
-        </button>
-      </div>
-    </form>
+    {#if error}
+      <div class="error">{error}</div>
+    {/if}
 
-    {#if searching && searchProgress}
-      <div class="progress-container">
-        <div class="progress-header">
-          <h4 class="progress-title">
-            <span class="progress-icon">⚡</span>
-            搜索进行中
-          </h4>
+    {#if results.length > 0}
+      <div class="results">
+        <div class="results-header">
+          <h2>
+            <span class="results-icon">📋</span>
+            搜索结果
+            <span class="results-count">({results.length})</span>
+          </h2>
         </div>
-        <div class="progress-info">
-          <div class="progress-stats">
-            <span class="stat-item">
-              <span class="stat-number">{searchProgress.current}</span>
-              <span class="stat-label">已处理</span>
-            </span>
-            <span class="stat-divider">/</span>
-            <span class="stat-item">
-              <span class="stat-number">{searchProgress.total}</span>
-              <span class="stat-label">总计</span>
-            </span>
-          </div>
-          <div class="current-file">
-            <span class="file-icon">📄</span>
-            {searchProgress.current_file.split("\\").pop()}
-          </div>
+
+        <div class="results-grid">
+          {#each results as result, index}
+            <div class="result-item" style="animation-delay: {index * 0.1}s">
+              <div class="result-header">
+                <div class="file-info-main">
+                  <h4 class="file-path">
+                    <span class="file-icon">📄</span>
+                    {result.file_path.split("\\").pop()}
+                  </h4>
+                </div>
+
+                <div class="action-buttons">
+                  <span class="file-size">
+                    <span class="meta-icon">💾</span>
+                    {formatFileSize(result.file_size)}
+                  </span>
+
+                  <button
+                    onclick={() =>
+                      openPDF(
+                        result.file_path,
+                        result.page_info?.at(0)?.page_number,
+                      )}
+                    class="action-btn external-btn"
+                    title="使用默认PDF阅读器打开"
+                  >
+                    <span class="btn-icon">🔗</span>
+                    <span class="btn-text">外部打开</span>
+                  </button>
+
+                  <button
+                    class="action-btn viewer-btn"
+                    onclick={() =>
+                      openPDFViewer(
+                        result.file_path,
+                        result.page_info?.at(0)?.page_number,
+                      )}
+                    title="在应用内查看PDF"
+                  >
+                    <span class="btn-icon">👁️</span>
+                    <span class="btn-text">内置查看</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="matched-content">
+                <div class="content-header">
+                  <span class="content-icon">💡</span>
+                  <span class="content-title">匹配内容</span>
+                </div>
+                <div class="matched-text">
+                  {result.page_info?.at(0)?.matched_text}
+                </div>
+              </div>
+            </div>
+          {/each}
         </div>
-        <div class="progress-bar">
-          <div
-            class="progress-fill"
-            style="width: {(searchProgress.current / searchProgress.total) * 100}%"
-          ></div>
-        </div>
-        <div class="progress-percentage">
-          {Math.round((searchProgress.current / searchProgress.total) * 100)}%
+      </div>
+    {:else if !searching && !error}
+      <div class="no-results">
+        <div class="no-results-content">
+          <span class="no-results-icon">🔍</span>
+          <h3>暂无搜索结果</h3>
+          <p>请选择文件夹并输入关键词开始搜索</p>
         </div>
       </div>
     {/if}
-  </div>
 
-  {#if error}
-    <div class="error">{error}</div>
-  {/if}
+    <!-- 页码提示Toast -->
+    {#if pageToast.visible}
+      <div class="toast">{pageToast.message}</div>
+    {/if}
 
-  {#if results.length > 0}
-    <div class="results">
-      <div class="results-header">
-        <h2>
-          <span class="results-icon">📋</span>
-          搜索结果
-          <span class="results-count">({results.length})</span>
-        </h2>
-      </div>
-      
-      <div class="results-grid">
-        {#each results as result, index}
-          <div class="result-item" style="animation-delay: {index * 0.1}s">
-            <div class="result-header">
-              <div class="file-info-main">
-                <h4 class="file-path">
-                  <span class="file-icon">📄</span>
-                  {result.file_path.split("\\").pop()}
-                </h4>
-                <div class="file-meta">
-                  <!-- {#if result.page_number}
-                    <span class="page-number">
-                      <span class="meta-icon">📖</span>
-                      第 {result.page_number} 页
-                    </span>
-                  {/if} -->
-                </div>
-              </div>
-              
-              <div class="action-buttons">
-                <span class="file-size">
-                  <span class="meta-icon">💾</span>
-                  {formatFileSize(result.file_size)}
-                </span>
-                
-                <button 
-                  onclick={() => openPDF(result.file_path, result.page_info?.at(0)?.page_number)}
-                  class="action-btn external-btn"
-                  title="使用默认PDF阅读器打开"
-                >
-                  <span class="btn-icon">🔗</span>
-                  <span class="btn-text">外部打开</span>
-                </button>
-                
-                <button 
-                  class="action-btn viewer-btn"
-                  onclick={() => openPDFViewer(result.file_path, result.page_info?.at(0)?.page_number)}
-                  title="在应用内查看PDF"
-                >
-                  <span class="btn-icon">👁️</span>
-                  <span class="btn-text">内置查看</span>
-                </button>
-                
-              </div>
-            </div>
-            
-            <div class="matched-content">
-              <div class="content-header">
-                <span class="content-icon">💡</span>
-                <span class="content-title">匹配内容</span>
-              </div>
-              <div class="matched-text">{result.page_info?.at(0)?.matched_text}</div>
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {:else if !searching && !error}
-    <div class="no-results">
-      <div class="no-results-content">
-        <span class="no-results-icon">🔍</span>
-        <h3>暂无搜索结果</h3>
-        <p>请选择文件夹并输入关键词开始搜索</p>
-      </div>
-    </div>
-  {/if}
-
-  <!-- 页码提示Toast -->
-  {#if pageToast.visible}
-    <div class="toast">{pageToast.message}</div>
-  {/if}
-
-  <!-- PDF查看器 -->
-  {#if pdfViewer.visible}
-    <PDFViewer 
-      filePath={pdfViewer.filePath}
-      initialPage={pdfViewer.initialPage}
-      onClose={closePDFViewer}
-    />
-  {/if}
+    <!-- PDF查看器 -->
+    {#if pdfViewer.visible}
+      <PDFViewer
+        filePath={pdfViewer.filePath}
+        initialPage={pdfViewer.initialPage}
+        onClose={closePDFViewer}
+      />
+    {/if}
   </div>
 </main>
 
@@ -354,7 +360,8 @@
   :global(body) {
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+      Ubuntu, Cantarell, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
   }
@@ -499,7 +506,7 @@
   }
 
   .toggle-slider::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 2px;
     left: 2px;
@@ -580,14 +587,22 @@
   }
 
   @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 
   .progress-container {
     margin-top: 1.5rem;
     padding: 1.5rem;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%);
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(248, 250, 252, 0.95) 100%
+    );
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.3);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
@@ -697,13 +712,18 @@
   }
 
   .progress-fill::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.4),
+      transparent
+    );
     animation: shimmer 2s infinite;
   }
 
@@ -716,8 +736,12 @@
   }
 
   @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(200%); }
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(200%);
+    }
   }
 
   input[type="text"] {
@@ -760,13 +784,18 @@
   }
 
   button::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
     transition: left 0.5s ease;
   }
 
@@ -878,12 +907,6 @@
     word-break: break-all;
   }
 
-  .file-meta {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
   .action-buttons {
     display: flex;
     gap: 0.75rem;
@@ -979,7 +1002,7 @@
     padding: 1.25rem;
     border-left: 4px solid #6366f1;
     border-radius: 12px;
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-family: "SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace;
     font-size: 0.9rem;
     line-height: 1.6;
     white-space: pre-wrap;
@@ -1041,6 +1064,63 @@
     font-weight: 500;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .thumbnail-placeholder {
+    width: 100%;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    border-radius: 4px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    min-height: 80px;
+  }
+
+  .thumbnail-loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+    /* 缩略图网格 */
+  .thumbnails-grid {
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 12px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent;
+  }
+
+  .thumbnails-grid::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .thumbnails-grid::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .thumbnails-grid::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .thumbnail-item {
+    background: white;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
 
   @keyframes slideInRight {
@@ -1127,8 +1207,13 @@
 
   /* 加载动画 */
   @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 
   button:disabled {
