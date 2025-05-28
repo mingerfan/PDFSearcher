@@ -10,6 +10,8 @@
   type PageInfoMatched = {
     page_number: number,
     matched_text: string,
+    canvas: HTMLCanvasElement,
+    loaded: boolean,
   };
   let results = $state<
     Array<{ file_path: string; file_size: number; page_info: PageInfoMatched[] }>
@@ -96,20 +98,7 @@
     }
   }
 
-  async function openPDF(path: string) {
-    try {
-      // 使用opener插件而不是shell
-      await invoke("open_pdf_at_page", {
-        filePath: path,
-        pageNumber: null,
-      });
-    } catch (e) {
-      console.error("打开PDF失败:", e);
-      error = `打开PDF失败: ${e}`;
-    }
-  }
-
-  async function openPDFAtPage(path: string, page?: number) {
+  async function openPDF(path: string, page?: number) {
     try {
       await invoke("open_pdf_at_page", {
         filePath: path,
@@ -304,7 +293,7 @@
                 </span>
                 
                 <button 
-                  onclick={() => openPDF(result.file_path)}
+                  onclick={() => openPDF(result.file_path, result.page_info?.at(0)?.page_number)}
                   class="action-btn external-btn"
                   title="使用默认PDF阅读器打开"
                 >
@@ -321,16 +310,6 @@
                   <span class="btn-text">内置查看</span>
                 </button>
                 
-                <!-- {#if result.page_number}
-                  <button 
-                    class="action-btn page-btn"
-                    onclick={() => openPDFAtPage(result.file_path, result.page_number)}
-                    title="直接跳转到第 {result.page_number} 页"
-                  >
-                    <span class="btn-icon">🎯</span>
-                    <span class="btn-text">跳转页面</span>
-                  </button>
-                {/if} -->
               </div>
             </div>
             
