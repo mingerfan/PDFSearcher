@@ -449,11 +449,19 @@
           console.error("加载缩略图失败:", e);
           // 显示错误状态
           node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
-        }
-      } else {
-        console.warn("PDF文档未找到或未加载:", filePath);
-        // 显示等待状态
-        node.innerHTML = '<div class="thumbnail-waiting"><span class="waiting-text">等待PDF加载...</span></div>';
+        }      } else {
+        console.warn("PDF文档未找到或未加载:", filePath);        // 显示等待状态 - 添加加载动画
+        node.innerHTML = `
+          <div class="thumbnail-waiting">
+            <div class="loading-animation">
+              <div class="pdf-loader-spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+              </div>
+            </div>
+          </div>
+        `;
         
         // 添加到等待列表
         if (!waitingThumbnails.has(filePath)) {
@@ -1426,7 +1434,27 @@
     justify-content: center;
     border: 1px solid #e2e8f0;
     min-height: 180px;
-  }  /* 缩略图网格 */
+  }
+
+  /* 动画关键帧 */  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: scale(1.1);
+      opacity: 0.8;
+    }
+  }
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }/* 缩略图网格 */
   .thumbnails-grid {
     padding: 16px 16px 8px 16px;
     display: flex;
@@ -1571,19 +1599,7 @@
 
     .file-path {
       color: #e5e7eb;
-    }
-  }
-
-  /* 加载动画 */
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
+    }  }
 
   button:disabled {
     animation: pulse 2s infinite;
