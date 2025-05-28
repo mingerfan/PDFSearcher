@@ -1,9 +1,9 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
-  import { open } from "@tauri-apps/plugin-shell";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import PDFViewer from "$lib/PDFViewer.svelte";
+  import type { Attachment } from "svelte/attachments";
 
   let folderPath = $state("");
   let keyword = $state("");
@@ -15,11 +15,9 @@
     matched_text: string;
     canvas?: HTMLCanvasElement;
     loaded?: boolean;
-  };
-  type Result = {
+  };  type Result = {
     file_path: string;
     file_size: number;
-    pdf_doc?: any; // PDF.js 文档对象
     page_info: PageInfoMatched[];
   };
   let results = $state<Result[]>([]);
@@ -35,8 +33,13 @@
     message: "",
     visible: false,
   });
-
   let thumbnailsContainer = $state<HTMLDivElement>();
+
+  // PDF文档缓存管理 - 使用file_path作为key
+  const pdfDocCache = new Map<string, any>();
+  
+  // PDF文档加载状态管理
+  const pdfLoadingStates = new Map<string, Promise<any>>();
 
   // PDF查看器状态
   let pdfViewer = $state<{
@@ -132,7 +135,6 @@
       },
     };
   }
-
   async function searchPDFs(event: Event) {
     event.preventDefault();
     if (!folderPath) {
@@ -142,12 +144,14 @@
     if (!keyword) {
       error = "请输入搜索关键词";
       return;
-    }
-
-    error = "";
+    }    error = "";
     searching = true;
     searchProgress = null;
     results = [];
+    
+    // 清理PDF文档缓存和加载状态
+    pdfDocCache.clear();
+    pdfLoadingStates.clear();
 
     try {
       const searchCommand = useAdvancedSearch
@@ -215,53 +219,78 @@
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
-
-  function lazyLoadPdf(node: HTMLElement, result: Result) {
-    if (result.pdf_doc)
+  }  function lazyLoadPdf(node: HTMLElement, result: Result) {
+    // 检查缓存中是否已有此PDF文档
+    const cachedDoc = pdfDocCache.get(result.file_path);
+    if (cachedDoc) {
       return {
         destroy() {
           /* do nothing */
         },
       };
-    let bytes: Uint8Array;
+    }
+
+    // 检查是否已经在加载中
+    const loadingPromise = pdfLoadingStates.get(result.file_path);
+    if (loadingPromise) {
+      return {
+        destroy() {
+          /* do nothing */
+        },
+      };
+    }
+
     let observer: IntersectionObserver;
 
-    // Initialize async resources
-    (async () => {
-      try {
-        await loadPdfJs();
+    observer = new IntersectionObserver(async (entries) => {
+      entries.forEach(async (entry) => {
+        if (entry.isIntersecting && !pdfDocCache.has(result.file_path) && !pdfLoadingStates.has(result.file_path)) {
+          try {
+            // 开始加载PDF
+            const loadPromise = (async () => {
+              await loadPdfJs();
+              
+              const base64Data = await invoke<string>("get_pdf_base64", {
+                filePath: result.file_path,
+              });
 
-        const base64Data = await invoke<string>("get_pdf_base64", {
-          filePath: result.file_path,
-        });
-
-        const binaryString = atob(base64Data);
-        bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        observer = new IntersectionObserver(async (entries) => {
-          entries.forEach(async (entry) => {
-            if (entry.isIntersecting && !result.pdf_doc && pdfjsLib && bytes) {
-              try {
-                result.pdf_doc = pdfjsLib.getDocument({
-                  data: bytes,
-                }).promise;
-              } catch (e) {
-                console.error("加载PDF文档失败:", e);
-                error = "加载PDF文档失败, 请重试";
+              const binaryString = atob(base64Data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
               }
-            }
-          });
-        });
 
-        observer.observe(node);
-      } catch (e) {
-        console.error("初始化PDF加载器失败:", e);
-      }
-    })();
+              const pdfDoc = await pdfjsLib.getDocument({
+                data: bytes,
+              }).promise;
+
+              return pdfDoc;
+            })();
+
+            // 存储加载Promise
+            pdfLoadingStates.set(result.file_path, loadPromise);
+
+            // 等待加载完成
+            const pdfDoc = await loadPromise;
+            
+            // 存入缓存
+            pdfDocCache.set(result.file_path, pdfDoc);
+            
+            // 清理加载状态
+            pdfLoadingStates.delete(result.file_path);
+            
+            console.log(`PDF文档已加载并缓存: ${result.file_path}`);
+
+          } catch (e) {
+            console.error("加载PDF文档失败:", e);
+            pdfLoadingStates.delete(result.file_path);
+            error = "加载PDF文档失败, 请重试";
+          }
+        }
+      });
+    });
+
+    observer.observe(node);
 
     return {
       destroy() {
@@ -272,7 +301,6 @@
       },
     };
   }
-
   async function loadPdfThumbnail(
     doc: any,
     canvas: HTMLCanvasElement,
@@ -280,56 +308,114 @@
   ) {
     try {
       const page = await doc.getPage(pageNumber);
-      const pageRotation = page.rotate;
-      let viewport = page.getViewport({ scale: 1, rotation: pageRotation });
+      const pageRotation = page.rotate || 0;
+      
+      // 获取基础viewport用于计算缩放比例
+      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
+      
+      // 计算适合的缩放比例，确保缩略图不会太大
+      const maxDimension = 120; // 最大边长
+      const scale = Math.min(
+        maxDimension / baseViewport.width,
+        maxDimension / baseViewport.height
+      );
+      
+      // 应用缩放的最终viewport
+      const viewport = page.getViewport({ scale, rotation: pageRotation });
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
 
       const context = canvas.getContext("2d");
       if (context) {
+        // 清除画布
         context.clearRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = "#ffffff"; // 设置背景色
+        
+        // 设置白色背景
+        context.fillStyle = "#ffffff";
         context.fillRect(0, 0, canvas.width, canvas.height);
 
+        // 设置高质量渲染
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
 
+        // 渲染页面
         await page.render({
           canvasContext: context,
           viewport: viewport,
-          background: "#ffffff", // 设置背景色
         }).promise;
       }
     } catch (e) {
       console.error("加载PDF缩略图失败:", e);
-      return null;
+      // 在canvas上显示错误信息
+      const context = canvas.getContext("2d");
+      if (context) {
+        canvas.width = 120;
+        canvas.height = 80;
+        context.fillStyle = "#f3f4f6";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#6b7280";
+        context.font = "12px sans-serif";
+        context.textAlign = "center";
+        context.fillText("加载失败", canvas.width / 2, canvas.height / 2);
+      }
     }
-  }
-
-  function lazyLoadThumbnail(
+  }  function lazyLoadThumbnail(
     node: HTMLElement,
-    params: { page: PageInfoMatched; doc: any },
+    params: { page: PageInfoMatched; filePath: string },
   ) {
-    const { page, doc } = params;
-    console.log("Lazy loading thumbnail for page:", page);
+    const { page, filePath } = params;
     const observer = new IntersectionObserver(async (entries) => {
       entries.forEach(async (entry) => {
         if (entry.isIntersecting && !page.loaded) {
-          const canvas = node as HTMLCanvasElement;
+          // 创建 canvas 元素
+          const canvas = document.createElement('canvas');
+          canvas.className = 'thumbnail-canvas';
+          
+          // 清空节点内容并添加 canvas
+          node.innerHTML = '';
+          node.appendChild(canvas);
+          
           page.canvas = canvas;
 
-          if (doc) {
-            await loadPdfThumbnail(doc, page.canvas, page.page_number);
-            page.loaded = true;
-            console.log("Loading thumbnail for page entries:", page);
+          // 从缓存中获取PDF文档
+          let pdfDoc = pdfDocCache.get(filePath);
+          
+          // 如果缓存中没有，检查是否正在加载
+          if (!pdfDoc) {
+            const loadingPromise = pdfLoadingStates.get(filePath);
+            if (loadingPromise) {
+              try {
+                pdfDoc = await loadingPromise;
+              } catch (e) {
+                console.error("等待PDF文档加载失败:", e);
+                // 显示错误状态
+                node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
+                return;
+              }
+            }
+          }
+
+          if (pdfDoc) {
+            try {
+              await loadPdfThumbnail(pdfDoc, page.canvas, page.page_number);
+              page.loaded = true;
+            } catch (e) {
+              console.error("加载缩略图失败:", e);
+              // 显示错误状态
+              node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
+            }
           } else {
-            console.error("PDF文档未加载");
+            console.warn("PDF文档未找到或未加载:", filePath);
+            // 显示等待状态
+            node.innerHTML = '<div class="thumbnail-waiting"><span class="waiting-text">等待PDF加载...</span></div>';
           }
         }
       });
     });
+    
     observer.observe(node);
+    
     return {
       destroy() {
         observer.unobserve(node);
@@ -512,8 +598,7 @@
                   <span class="content-icon">💡</span>
                   <span class="content-title">匹配内容</span>
                 </div>
-                <div class="thumbnails-grid" bind:this={thumbnailsContainer}>
-                  {#each result.page_info as page}
+                <div class="thumbnails-grid" bind:this={thumbnailsContainer}>                  {#each result.page_info as page}
                     <div
                       class="thumbnail-item"
                       onclick={() =>
@@ -526,18 +611,11 @@
                       role="button"
                       tabindex="0"
                       title="点击查看第 {page.page_number} 页"
-                      use:lazyLoadThumbnail={{ page, doc: result.pdf_doc }}
+                      use:lazyLoadThumbnail={{ page, filePath: result.file_path }}
                     >
-                      {#if page.loaded}
-                        <canvas
-                          bind:this={page.canvas}
-                          class="thumbnail-canvas"
-                        ></canvas>
-                      {:else}
-                        <div class="thumbnail-placeholder">
-                          <span class="placeholder-text">加载中...</span>
-                        </div>
-                      {/if}
+                      <div class="thumbnail-placeholder">
+                        <span class="placeholder-text">页面 {page.page_number}</span>
+                      </div>
                     </div>
                   {/each}
                 </div>
@@ -1435,7 +1513,6 @@
   button:disabled {
     animation: pulse 2s infinite;
   }
-
   /* 悬浮效果 */
   .search-form {
     transition: all 0.3s ease;
@@ -1444,5 +1521,44 @@
   .search-form:hover {
     transform: translateY(-2px);
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+  }
+
+  /* 缩略图样式 */
+  .thumbnail-canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .thumbnail-placeholder {
+    width: 120px;
+    height: 80px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+  }
+
+  .placeholder-text {
+    color: #6b7280;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  /* Toast样式 */
+  .toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
+    z-index: 1000;
+    animation: slideInRight 0.3s ease-out;
   }
 </style>

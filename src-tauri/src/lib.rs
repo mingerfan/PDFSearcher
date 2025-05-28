@@ -295,7 +295,8 @@ async fn search_pdfs_advanced(
                 current: *count,
                 total: total_files,
                 current_file: file_path.clone(),
-            };            let _ = app_handle.emit("search-progress", &progress);
+            };
+            let _ = app_handle.emit("search-progress", &progress);
         }
 
         // 执行搜索 - 对每个关键词分别搜索
@@ -455,6 +456,7 @@ async fn search_in_pdf_pages(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
