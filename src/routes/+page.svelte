@@ -7,19 +7,22 @@
 
   let folderPath = $state("");
   let keyword = $state("");
+
+  let pdfjsLib: any;
+
   type PageInfoMatched = {
     page_number: number;
     matched_text: string;
     canvas?: HTMLCanvasElement;
     loaded?: boolean;
   };
-  let results = $state<
-    Array<{
-      file_path: string;
-      file_size: number;
-      page_info: PageInfoMatched[];
-    }>
-  >([]);
+  type Result = {
+    file_path: string;
+    file_size: number;
+    pdf_doc?: any; // PDF.js 文档对象
+    page_info: PageInfoMatched[];
+  };
+  let results = $state<Result[]>([]);
   let searching = $state(false);
   let error = $state("");
   let useAdvancedSearch = $state(false);
@@ -32,6 +35,8 @@
     message: "",
     visible: false,
   });
+
+  let thumbnailsContainer = $state<HTMLDivElement>();
 
   // PDF查看器状态
   let pdfViewer = $state<{
@@ -66,6 +71,66 @@
     } catch (e) {
       error = e as string;
     }
+  }
+
+  async function loadPdfJs() {
+    if (!pdfjsLib) {
+      // 动态加载 pdfjs-dist
+      pdfjsLib = await import("pdfjs-dist");
+
+      // 设置全局 Worker
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/js/pdf.worker.min.js";
+    }
+    return pdfjsLib;
+  }
+
+  function renderThumbnailCanvas(
+    canvas: HTMLCanvasElement,
+    sourceCanvas: HTMLCanvasElement,
+  ) {
+    if (!sourceCanvas || !canvas) return;
+
+    function renderCanvas() {
+      if (
+        !sourceCanvas ||
+        sourceCanvas.width === 0 ||
+        sourceCanvas.height === 0
+      )
+        return;
+
+      // Set the display canvas size to match the source canvas
+      canvas.width = sourceCanvas.width;
+      canvas.height = sourceCanvas.height;
+
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        // Set high quality rendering
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+
+        // Clear the canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Set white background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw the source canvas
+        ctx.drawImage(sourceCanvas, 0, 0);
+      }
+    }
+
+    // Initial render
+    renderCanvas();
+
+    return {
+      update(newSourceCanvas: HTMLCanvasElement) {
+        if (newSourceCanvas) {
+          sourceCanvas = newSourceCanvas;
+          renderCanvas();
+        }
+      },
+    };
   }
 
   async function searchPDFs(event: Event) {
@@ -150,6 +215,127 @@
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  function lazyLoadPdf(node: HTMLElement, result: Result) {
+    if (result.pdf_doc)
+      return {
+        destroy() {
+          /* do nothing */
+        },
+      };
+    let bytes: Uint8Array;
+    let observer: IntersectionObserver;
+
+    // Initialize async resources
+    (async () => {
+      try {
+        await loadPdfJs();
+
+        const base64Data = await invoke<string>("get_pdf_base64", {
+          filePath: result.file_path,
+        });
+
+        const binaryString = atob(base64Data);
+        bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        observer = new IntersectionObserver(async (entries) => {
+          entries.forEach(async (entry) => {
+            if (entry.isIntersecting && !result.pdf_doc && pdfjsLib && bytes) {
+              try {
+                result.pdf_doc = pdfjsLib.getDocument({
+                  data: bytes,
+                }).promise;
+              } catch (e) {
+                console.error("加载PDF文档失败:", e);
+                error = "加载PDF文档失败, 请重试";
+              }
+            }
+          });
+        });
+
+        observer.observe(node);
+      } catch (e) {
+        console.error("初始化PDF加载器失败:", e);
+      }
+    })();
+
+    return {
+      destroy() {
+        if (observer) {
+          observer.unobserve(node);
+          observer.disconnect();
+        }
+      },
+    };
+  }
+
+  async function loadPdfThumbnail(
+    doc: any,
+    canvas: HTMLCanvasElement,
+    pageNumber: number,
+  ) {
+    try {
+      const page = await doc.getPage(pageNumber);
+      const pageRotation = page.rotate;
+      let viewport = page.getViewport({ scale: 1, rotation: pageRotation });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#ffffff"; // 设置背景色
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+
+        await page.render({
+          canvasContext: context,
+          viewport: viewport,
+          background: "#ffffff", // 设置背景色
+        }).promise;
+      }
+    } catch (e) {
+      console.error("加载PDF缩略图失败:", e);
+      return null;
+    }
+  }
+
+  function lazyLoadThumbnail(
+    node: HTMLElement,
+    params: { page: PageInfoMatched; doc: any },
+  ) {
+    const { page, doc } = params;
+    console.log("Lazy loading thumbnail for page:", page);
+    const observer = new IntersectionObserver(async (entries) => {
+      entries.forEach(async (entry) => {
+        if (entry.isIntersecting && !page.loaded) {
+          const canvas = node as HTMLCanvasElement;
+          page.canvas = canvas;
+
+          if (doc) {
+            await loadPdfThumbnail(doc, page.canvas, page.page_number);
+            page.loaded = true;
+            console.log("Loading thumbnail for page entries:", page);
+          } else {
+            console.error("PDF文档未加载");
+          }
+        }
+      });
+    });
+    observer.observe(node);
+    return {
+      destroy() {
+        observer.unobserve(node);
+        observer.disconnect();
+      },
+    };
   }
 </script>
 
@@ -274,7 +460,11 @@
 
         <div class="results-grid">
           {#each results as result, index}
-            <div class="result-item" style="animation-delay: {index * 0.1}s">
+            <div
+              class="result-item"
+              style="animation-delay: {index * 0.1}s"
+              use:lazyLoadPdf={result}
+            >
               <div class="result-header">
                 <div class="file-info-main">
                   <h4 class="file-path">
@@ -322,8 +512,34 @@
                   <span class="content-icon">💡</span>
                   <span class="content-title">匹配内容</span>
                 </div>
-                <div class="matched-text">
-                  {result.page_info?.at(0)?.matched_text}
+                <div class="thumbnails-grid" bind:this={thumbnailsContainer}>
+                  {#each result.page_info as page}
+                    <div
+                      class="thumbnail-item"
+                      onclick={() =>
+                        openPDFViewer(result.file_path, page.page_number)}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter") {
+                          openPDFViewer(result.file_path, page.page_number);
+                        }
+                      }}
+                      role="button"
+                      tabindex="0"
+                      title="点击查看第 {page.page_number} 页"
+                      use:lazyLoadThumbnail={{ page, doc: result.pdf_doc }}
+                    >
+                      {#if page.loaded}
+                        <canvas
+                          bind:this={page.canvas}
+                          class="thumbnail-canvas"
+                        ></canvas>
+                      {:else}
+                        <div class="thumbnail-placeholder">
+                          <span class="placeholder-text">加载中...</span>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
                 </div>
               </div>
             </div>
@@ -1089,7 +1305,7 @@
     gap: 8px;
   }
 
-    /* 缩略图网格 */
+  /* 缩略图网格 */
   .thumbnails-grid {
     padding: 16px;
     display: grid;
