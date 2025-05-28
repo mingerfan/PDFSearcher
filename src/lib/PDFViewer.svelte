@@ -127,8 +127,10 @@
       const baseViewport = page.getViewport({
         scale: 1,
         rotation: pageRotation,
-      });      // Calculate proper thumbnail scale - aim for max 300px width or height
-      const maxDimension = 300;
+      });
+
+      // Calculate proper thumbnail scale - aim for max 200px width or height
+      const maxDimension = 200;
       const thumbnailScale = Math.min(
         maxDimension / baseViewport.width,
         maxDimension / baseViewport.height,
@@ -1693,16 +1695,13 @@
     flex-direction: column;
   }
 
-  /* 缩略图网格 */  .thumbnails-grid {
+  /* 缩略图网格 */
+  .thumbnails-grid {
     padding: 16px;
     display: grid;
-    grid-template-rows: repeat(2, minmax(160px, auto));
-    grid-auto-flow: column;
-    grid-auto-columns: 120px;
-    gap: 16px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    max-height: calc(2 * 160px + 16px + 32px); /* 两行缩略图的高度 + 间距 + padding */
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 12px;
+    overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
   }
@@ -1718,34 +1717,44 @@
   .thumbnails-grid::-webkit-scrollbar-thumb {
     background: #cbd5e1;
     border-radius: 3px;
-  }  .thumbnail-item {
+  }
+
+  .thumbnail-item {
     background: white;
     border-radius: 8px;
-    padding: 12px;
+    padding: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 2px solid transparent;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    width: 120px;
-    min-width: 120px;
-    max-width: 120px;
-    height: 160px;
-    min-height: 160px;
-    max-height: 160px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    flex-shrink: 0;
   }
 
   .thumbnail-item:hover {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     transform: translateY(-1px);
   }
+
   .thumbnail-item.active {
     border-color: #667eea;
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-  }.thumbnail-placeholder {
+  }
+  .thumbnail-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    border-radius: 4px;
+    background: #f8fafc;
+  }
+
+  .thumbnail-canvas-wrapper canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .thumbnail-placeholder {
     width: 100%;
     background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
     border-radius: 4px;
@@ -1754,8 +1763,7 @@
     align-items: center;
     justify-content: center;
     border: 1px solid #e2e8f0;
-    min-height: 120px;
-    flex: 1;
+    min-height: 80px;
   }
 
   .thumbnail-loading {
@@ -1767,7 +1775,8 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
-  }  .thumbnail-canvas-wrapper {
+  }
+  .thumbnail-canvas-wrapper {
     width: 100%;
     position: relative;
     border-radius: 4px;
@@ -1777,8 +1786,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1;
-    max-height: 120px;
   }
 
   .thumbnail-canvas-wrapper canvas {
@@ -2265,27 +2272,12 @@
 
     .pdf-sidebar {
       width: 240px;
-    }    .thumbnails-grid {
-      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-      grid-template-rows: repeat(2, auto);
-      grid-auto-flow: column;
-      gap: 12px;
+    }
+
+    .thumbnails-grid {
+      grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+      gap: 8px;
       padding: 12px;
-      max-height: calc(2 * 120px + 12px + 24px);
-    }
-
-    .thumbnail-item {
-      width: 80px;
-      height: 120px;
-      padding: 8px;
-    }
-
-    .thumbnail-placeholder {
-      min-height: 80px;
-    }
-
-    .thumbnail-canvas-wrapper {
-      max-height: 80px;
     }
 
     .pdf-content {
@@ -2303,25 +2295,10 @@
       height: 200px;
       border-right: none;
       border-bottom: 1px solid #e2e8f0;
-    }    .thumbnails-grid {
-      grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-      grid-template-rows: repeat(2, auto);
-      grid-auto-flow: column;
-      max-height: calc(2 * 100px + 8px + 24px);
     }
 
-    .thumbnail-item {
-      width: 60px;
-      height: 100px;
-      padding: 6px;
-    }
-
-    .thumbnail-placeholder {
-      min-height: 60px;
-    }
-
-    .thumbnail-canvas-wrapper {
-      max-height: 60px;
+    .thumbnails-grid {
+      grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
     }
   }
 </style>
