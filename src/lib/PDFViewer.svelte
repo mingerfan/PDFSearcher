@@ -99,7 +99,6 @@
       const pageRotation = firstPage.rotate || 0;
       const firstViewport = firstPage.getViewport({
         scale: 1,
-        rotation: pageRotation,
       });
       defaultAspectRatio = firstViewport.width / firstViewport.height;
     } catch (e) {
@@ -114,22 +113,6 @@
         loaded: false,
         aspectRatio: defaultAspectRatio, // Use calculated default aspect ratio
       });
-    }
-
-    // 首先生成前10页的缩略图，确保快速显示
-    const initialBatch = Math.min(totalPages, 10);
-    for (let i = 1; i <= initialBatch; i++) {
-      await generateSingleThumbnail(i - 1);
-    }
-
-    // 后台继续生成第11-50页的缩略图
-    if (totalPages > initialBatch) {
-      setTimeout(async () => {
-        await generateRemainingThumbnails(
-          initialBatch,
-          Math.min(50, totalPages),
-        );
-      }, 100);
     }
   }
   async function generateSingleThumbnail(index: number) {
@@ -194,32 +177,6 @@
         `Failed to generate thumbnail for page ${thumbnails[index].pageNum}:`,
         e,
       );
-    }
-  }
-  async function generateRemainingThumbnails(
-    startIndex: number,
-    endIndex?: number,
-  ) {
-    if (!pdfDoc) return;
-
-    const end =
-      endIndex !== undefined
-        ? Math.min(endIndex, thumbnails.length)
-        : thumbnails.length;
-
-    // 分批生成剩余缩略图，避免阻塞UI
-    const batchSize = 5;
-    for (let i = startIndex; i < end; i += batchSize) {
-      const batch = [];
-
-      for (let j = i; j < Math.min(i + batchSize, end); j++) {
-        batch.push(generateSingleThumbnail(j));
-      }
-
-      await Promise.all(batch);
-
-      // 每批次之间短暂延迟，保持UI响应
-      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   }
 
