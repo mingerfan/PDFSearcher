@@ -89,54 +89,6 @@
     return pdfjsLib;
   }
 
-  function renderThumbnailCanvas(
-    canvas: HTMLCanvasElement,
-    sourceCanvas: HTMLCanvasElement,
-  ) {
-    if (!sourceCanvas || !canvas) return;
-
-    function renderCanvas() {
-      if (
-        !sourceCanvas ||
-        sourceCanvas.width === 0 ||
-        sourceCanvas.height === 0
-      )
-        return;
-
-      // Set the display canvas size to match the source canvas
-      canvas.width = sourceCanvas.width;
-      canvas.height = sourceCanvas.height;
-
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        // Set high quality rendering
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-
-        // Clear the canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Set white background
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw the source canvas
-        ctx.drawImage(sourceCanvas, 0, 0);
-      }
-    }
-
-    // Initial render
-    renderCanvas();
-
-    return {
-      update(newSourceCanvas: HTMLCanvasElement) {
-        if (newSourceCanvas) {
-          sourceCanvas = newSourceCanvas;
-          renderCanvas();
-        }
-      },
-    };
-  }
   async function searchPDFs(event: Event) {
     event.preventDefault();
     if (!folderPath) {
@@ -290,11 +242,17 @@
               const waitingItems = Array.from(waitingSet);
               
               for (const item of waitingItems) {
-                try {
-                  if (!item.page.loaded) {
-                    // 创建新的canvas元素
+                try {                  if (!item.page.loaded) {
+                    // 创建新的canvas元素，设置高分辨率属性
                     const canvas = document.createElement('canvas');
                     canvas.className = 'thumbnail-canvas';
+                    
+                    // 提前设置canvas的渲染优化属性
+                    const context = canvas.getContext('2d');
+                    if (context) {
+                      context.imageSmoothingEnabled = true;
+                      context.imageSmoothingQuality = "high";
+                    }
                     
                     // 清空节点内容并添加 canvas
                     item.node.innerHTML = '';
@@ -337,8 +295,7 @@
         }
       },
     };
-  }
-  async function loadPdfThumbnail(
+  }  async function loadPdfThumbnail(
     doc: any,
     canvas: HTMLCanvasElement,
     pageNumber: number,
@@ -346,31 +303,43 @@
     try {
       const page = await doc.getPage(pageNumber);
       const pageRotation = page.rotate || 0;
-        // 获取基础viewport用于计算缩放比例
-      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });        // 计算适合的缩放比例，确保缩略图适合容器
-      const maxWidth = 240; // 容器最大宽度 - 进一步增大
-      const maxHeight = 180; // 容器最大高度 - 进一步增大
-      const scale = Math.min(
+      
+      // 获取基础viewport用于计算缩放比例
+      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
+      
+      // 计算适合的缩放比例，确保缩略图适合容器，同时提高分辨率
+      const maxWidth = 240; // 容器最大宽度
+      const maxHeight = 180; // 容器最大高度
+      
+      // 使用更高的分辨率倍数来提升画质
+      const pixelRatio = window.devicePixelRatio || 2; // 使用设备像素比或最少2倍
+      const highQualityScale = Math.min(
         maxWidth / baseViewport.width,
         maxHeight / baseViewport.height
-      );
+      ) * pixelRatio; // 应用高分辨率倍数
       
       // 应用缩放的最终viewport
-      const viewport = page.getViewport({ scale, rotation: pageRotation });
+      const viewport = page.getViewport({ scale: highQualityScale, rotation: pageRotation });
 
+      // 设置canvas的实际分辨率为高分辨率
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      
+      // 设置canvas的显示尺寸为正常尺寸
+      canvas.style.width = Math.floor(viewport.width / pixelRatio) + 'px';
+      canvas.style.height = Math.floor(viewport.height / pixelRatio) + 'px';
 
       const context = canvas.getContext("2d");
       if (context) {
+        // 缩放上下文以匹配设备像素比
+        context.scale(1, 1); // 保持1:1的比例，因为我们已经在viewport中处理了缩放
+        
         // 清除画布
         context.clearRect(0, 0, canvas.width, canvas.height);
         
         // 设置白色背景
         context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 设置高质量渲染
+        context.fillRect(0, 0, canvas.width, canvas.height);        // 设置高质量渲染参数
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
 
@@ -378,6 +347,9 @@
         await page.render({
           canvasContext: context,
           viewport: viewport,
+          intent: 'display', // 明确指定渲染意图
+          renderInteractiveForms: false, // 禁用交互式表单以提高性能
+          annotationMode: 0, // 禁用注释渲染以提高性能
         }).promise;
       }
     } catch (e) {
@@ -385,17 +357,19 @@
       // 在canvas上显示错误信息
       const context = canvas.getContext("2d");
       if (context) {
-        canvas.width = 120;
-        canvas.height = 80;
+        canvas.width = 240;
+        canvas.height = 180;
+        canvas.style.width = '240px';
+        canvas.style.height = '180px';
         context.fillStyle = "#f3f4f6";
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.fillStyle = "#6b7280";
-        context.font = "12px sans-serif";
+        context.font = "14px sans-serif";
         context.textAlign = "center";
         context.fillText("加载失败", canvas.width / 2, canvas.height / 2);
       }
     }
-  }  function lazyLoadThumbnail(
+  }function lazyLoadThumbnail(
     node: HTMLElement,
     params: { page: PageInfoMatched; filePath: string },
   ) {
@@ -403,10 +377,16 @@
     
     const tryLoadThumbnail = async () => {
       if (page.loaded) return;
-      
-      // 创建 canvas 元素
+        // 创建 canvas 元素，设置高分辨率属性
       const canvas = document.createElement('canvas');
       canvas.className = 'thumbnail-canvas';
+      
+      // 提前设置canvas的渲染优化属性
+      const context = canvas.getContext('2d');
+      if (context) {
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
+      }
       
       // 清空节点内容并添加 canvas
       node.innerHTML = '';
@@ -1434,6 +1414,76 @@
     justify-content: center;
     border: 1px solid #e2e8f0;
     min-height: 180px;
+    font-weight: 500;
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  .placeholder-text {
+    text-align: center;
+    opacity: 0.8;
+  }  /* 缩略图加载状态样式优化 */
+  :global(.thumbnail-waiting) {
+    width: 100%;
+    height: 100%;
+    min-height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 4px;
+  }
+
+  :global(.loading-animation) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  :global(.pdf-loader-spinner) {
+    position: relative;
+    width: 40px;
+    height: 40px;
+  }
+
+  :global(.spinner-ring) {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 3px solid transparent;
+    border-top: 3px solid #6366f1;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  :global(.spinner-ring:nth-child(2)) {
+    animation-delay: 0.2s;
+    border-top-color: #8b5cf6;
+  }
+
+  :global(.spinner-ring:nth-child(3)) {
+    animation-delay: 0.4s;
+    border-top-color: #06b6d4;
+  }
+
+  /* 缩略图错误状态样式 */
+  :global(.thumbnail-error) {
+    width: 100%;
+    height: 100%;
+    min-height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border-radius: 4px;
+    border: 1px solid #fecaca;
+  }
+
+  :global(.error-text) {
+    color: #dc2626;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
   }
 
   /* 动画关键帧 */  @keyframes pulse {
@@ -1503,6 +1553,23 @@
     flex-shrink: 0;
     /* 确保最后一项有足够的右边距 */
     margin-right: 4px;
+    /* 确保缩略图图像清晰 */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+
+  /* 缩略图canvas样式优化 */
+  .thumbnail-item :global(.thumbnail-canvas) {
+    border-radius: 4px;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    /* 图像渲染优化 */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    image-rendering: optimizeQuality;
+    /* 确保高DPI显示正确 */
+    image-rendering: auto;
   }
 
   .thumbnail-item:last-child {
