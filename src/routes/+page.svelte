@@ -1360,19 +1360,20 @@
     min-height: 180px;
   }  /* 缩略图网格 */
   .thumbnails-grid {
-    padding: 16px;
+    padding: 16px 16px 8px 16px;
     display: flex;
     gap: 20px;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
-    padding-bottom: 8px;
     /* 确保缩略图容器不会超出父容器宽度 */
     width: 100%;
     max-width: 100%;
     /* 防止子元素影响父容器的宽度 */
     min-width: 0;
+    /* 确保最后一项有足够的右边距 */
+    padding-right: 32px;
   }
   .thumbnails-grid::-webkit-scrollbar {
     width: 6px;
@@ -1404,6 +1405,12 @@
     min-height: 180px;
     width: 240px;
     flex-shrink: 0;
+    /* 确保最后一项有足够的右边距 */
+    margin-right: 4px;
+  }
+
+  .thumbnail-item:last-child {
+    margin-right: 20px;
   }
 
   .thumbnail-item:hover {
