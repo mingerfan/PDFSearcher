@@ -548,13 +548,16 @@
     } catch (e) {
       console.error("复制文本失败:", e);
     }
-  }
-  function handleKeydown(event: KeyboardEvent) {
+  }  function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       onClose();
-    } else if (event.key === "ArrowLeft") {
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      // 左键或上键：上一页
+      event.preventDefault();
       prevPage();
-    } else if (event.key === "ArrowRight") {
+    } else if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      // 右键或下键：下一页
+      event.preventDefault();
       nextPage();
     } else if (event.key === "+" || event.key === "=") {
       zoomIn();
@@ -579,18 +582,42 @@
         selection?.addRange(range);
       }
     }
-  }
-
-  function handleWheel(event: WheelEvent) {
+  }  function handleWheel(event: WheelEvent) {
     if (event.ctrlKey) {
+      // Ctrl+滚轮：缩放
       event.preventDefault();
       if (event.deltaY < 0) {
         zoomIn();
       } else {
         zoomOut();
       }
+    } else {
+      // 普通滚轮：先检查是否需要页面内滚动，然后再考虑翻页
+      const pdfContent = document.querySelector('.pdf-content') as HTMLElement;
+      if (!pdfContent) return;
+
+      const isScrolledToTop = pdfContent.scrollTop <= 0;
+      const isScrolledToBottom = pdfContent.scrollTop + pdfContent.clientHeight >= pdfContent.scrollHeight - 1;
+      
+      if (event.deltaY < 0) {
+        // 向上滚动
+        if (isScrolledToTop) {
+          // 已经滚动到顶部，执行上一页
+          event.preventDefault();
+          prevPage();
+        }
+        // 否则让默认的滚动行为发生（不阻止事件）
+      } else {
+        // 向下滚动
+        if (isScrolledToBottom) {
+          // 已经滚动到底部，执行下一页
+          event.preventDefault();
+          nextPage();
+        }
+        // 否则让默认的滚动行为发生（不阻止事件）
+      }
     }
-  } // 自定义指令：渲染缩略图到canvas
+  }// 自定义指令：渲染缩略图到canvas
   function renderThumbnailCanvas(
     canvas: HTMLCanvasElement,
     sourceCanvas: HTMLCanvasElement,
