@@ -309,12 +309,10 @@
     try {
       const page = await doc.getPage(pageNumber);
       const pageRotation = page.rotate || 0;
-      
-      // 获取基础viewport用于计算缩放比例
-      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });
-        // 计算适合的缩放比例，确保缩略图适合容器
-      const maxWidth = 80; // 容器最大宽度
-      const maxHeight = 60; // 容器最大高度
+        // 获取基础viewport用于计算缩放比例
+      const baseViewport = page.getViewport({ scale: 1, rotation: pageRotation });        // 计算适合的缩放比例，确保缩略图适合容器
+      const maxWidth = 240; // 容器最大宽度 - 进一步增大
+      const maxHeight = 180; // 容器最大高度 - 进一步增大
       const scale = Math.min(
         maxWidth / baseViewport.width,
         maxHeight / baseViewport.height
@@ -665,11 +663,13 @@
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     padding: 1rem 0;
   }
-
   .container {
     margin: 0 auto;
     padding: 0 2rem;
     max-width: 1200px;
+    /* 确保容器不会被内容撑宽 */
+    min-width: 0;
+    overflow-x: hidden;
   }
 
   .search-form {
@@ -1160,7 +1160,6 @@
     display: grid;
     gap: 1rem;
   }
-
   .result-item {
     background: rgba(255, 255, 255, 0.95);
     padding: 1.5rem;
@@ -1171,6 +1170,9 @@
     transition: all 0.3s ease;
     animation: slideInUp 0.5s ease-out;
     animation-fill-mode: both;
+    /* 确保结果项不会被内容撑宽 */
+    min-width: 0;
+    overflow: hidden;
   }
 
   .result-item:hover {
@@ -1266,11 +1268,13 @@
 
   .meta-icon {
     font-size: 0.875rem;
-  }
-
-  .matched-content {
+  }  .matched-content {
     border-top: 1px solid #e2e8f0;
     padding-top: 1rem;
+    width: 100%;
+    overflow: hidden;
+    /* 确保matched-content不会被子元素撑宽 */
+    min-width: 0;
   }
 
   .content-header {
@@ -1344,9 +1348,7 @@
     font-weight: 500;
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
-  }
-
-  .thumbnail-placeholder {
+  }  .thumbnail-placeholder {
     width: 100%;
     background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
     border-radius: 4px;
@@ -1355,22 +1357,26 @@
     align-items: center;
     justify-content: center;
     border: 1px solid #e2e8f0;
-    min-height: 80px;
-  }
-
-  /* 缩略图网格 */
+    min-height: 180px;
+  }  /* 缩略图网格 */
   .thumbnails-grid {
     padding: 16px;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-    gap: 12px;
-    overflow-y: auto;
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: thin;
     scrollbar-color: #cbd5e1 transparent;
+    padding-bottom: 8px;
+    /* 确保缩略图容器不会超出父容器宽度 */
+    width: 100%;
+    max-width: 100%;
+    /* 防止子元素影响父容器的宽度 */
+    min-width: 0;
   }
-
   .thumbnails-grid::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
 
   .thumbnails-grid::-webkit-scrollbar-track {
@@ -1381,10 +1387,13 @@
     background: #cbd5e1;
     border-radius: 3px;
   }
-  .thumbnail-item {
+
+  .thumbnails-grid::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }  .thumbnail-item {
     background: white;
     border-radius: 8px;
-    padding: 4px;
+    padding: 8px;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 2px solid transparent;
@@ -1392,8 +1401,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 88px;
-    height: 68px;
+    min-height: 180px;
+    width: 240px;
+    flex-shrink: 0;
+  }
+
+  .thumbnail-item:hover {
+    border-color: #6366f1;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.15);
+  }
+
+  .thumbnail-item:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
   }
 
   @keyframes slideInRight {
@@ -1406,7 +1428,6 @@
       opacity: 1;
     }
   }
-
   /* 响应式设计 */
   @media (max-width: 768px) {
     .container {
@@ -1431,6 +1452,12 @@
       flex-direction: column;
       align-items: flex-start;
     }
+    
+    .thumbnails-grid {
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+    }
+    
     .toast {
       top: 10px;
       right: 10px;
