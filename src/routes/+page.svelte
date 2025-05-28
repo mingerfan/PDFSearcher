@@ -34,12 +34,14 @@
     visible: false,
   });
   let thumbnailsContainer = $state<HTMLDivElement>();
-
   // PDF文档缓存管理 - 使用file_path作为key
   const pdfDocCache = new Map<string, any>();
   
   // PDF文档加载状态管理
   const pdfLoadingStates = new Map<string, Promise<any>>();
+  
+  // 存储等待加载的缩略图节点
+  const waitingThumbnails = new Map<string, Set<{ node: HTMLElement; page: PageInfoMatched; filePath: string }>>();
 
   // PDF查看器状态
   let pdfViewer = $state<{
@@ -268,9 +270,7 @@
             })();
 
             // 存储加载Promise
-            pdfLoadingStates.set(result.file_path, loadPromise);
-
-            // 等待加载完成
+            pdfLoadingStates.set(result.file_path, loadPromise);            // 等待加载完成
             const pdfDoc = await loadPromise;
             
             // 存入缓存
@@ -280,6 +280,43 @@
             pdfLoadingStates.delete(result.file_path);
             
             console.log(`PDF文档已加载并缓存: ${result.file_path}`);
+            
+            // 处理等待中的缩略图
+            const waitingSet = waitingThumbnails.get(result.file_path);
+            if (waitingSet && waitingSet.size > 0) {
+              console.log(`开始处理 ${waitingSet.size} 个等待中的缩略图`);
+              
+              // 转换为数组以避免在迭代过程中修改Set
+              const waitingItems = Array.from(waitingSet);
+              
+              for (const item of waitingItems) {
+                try {
+                  if (!item.page.loaded) {
+                    // 创建新的canvas元素
+                    const canvas = document.createElement('canvas');
+                    canvas.className = 'thumbnail-canvas';
+                    
+                    // 清空节点内容并添加 canvas
+                    item.node.innerHTML = '';
+                    item.node.appendChild(canvas);
+                    
+                    item.page.canvas = canvas;
+                    
+                    // 加载缩略图
+                    await loadPdfThumbnail(pdfDoc, item.page.canvas, item.page.page_number);
+                    item.page.loaded = true;
+                    
+                    console.log(`缩略图加载完成: ${item.filePath} 页面 ${item.page.page_number}`);
+                  }
+                } catch (e) {
+                  console.error(`加载等待中的缩略图失败: ${item.filePath} 页面 ${item.page.page_number}`, e);
+                  item.node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
+                }
+              }
+              
+              // 清空等待列表
+              waitingThumbnails.delete(result.file_path);
+            }
 
           } catch (e) {
             console.error("加载PDF文档失败:", e);
@@ -363,51 +400,73 @@
     params: { page: PageInfoMatched; filePath: string },
   ) {
     const { page, filePath } = params;
+    
+    const tryLoadThumbnail = async () => {
+      if (page.loaded) return;
+      
+      // 创建 canvas 元素
+      const canvas = document.createElement('canvas');
+      canvas.className = 'thumbnail-canvas';
+      
+      // 清空节点内容并添加 canvas
+      node.innerHTML = '';
+      node.appendChild(canvas);
+      
+      page.canvas = canvas;
+
+      // 从缓存中获取PDF文档
+      let pdfDoc = pdfDocCache.get(filePath);
+      
+      // 如果缓存中没有，检查是否正在加载
+      if (!pdfDoc) {
+        const loadingPromise = pdfLoadingStates.get(filePath);
+        if (loadingPromise) {
+          try {
+            pdfDoc = await loadingPromise;
+          } catch (e) {
+            console.error("等待PDF文档加载失败:", e);
+            // 显示错误状态
+            node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
+            return;
+          }
+        }
+      }
+
+      if (pdfDoc) {
+        try {
+          await loadPdfThumbnail(pdfDoc, page.canvas, page.page_number);
+          page.loaded = true;
+          
+          // 从等待列表中移除
+          const waitingSet = waitingThumbnails.get(filePath);
+          if (waitingSet) {
+            waitingSet.delete({ node, page, filePath });
+            if (waitingSet.size === 0) {
+              waitingThumbnails.delete(filePath);
+            }
+          }
+        } catch (e) {
+          console.error("加载缩略图失败:", e);
+          // 显示错误状态
+          node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
+        }
+      } else {
+        console.warn("PDF文档未找到或未加载:", filePath);
+        // 显示等待状态
+        node.innerHTML = '<div class="thumbnail-waiting"><span class="waiting-text">等待PDF加载...</span></div>';
+        
+        // 添加到等待列表
+        if (!waitingThumbnails.has(filePath)) {
+          waitingThumbnails.set(filePath, new Set());
+        }
+        waitingThumbnails.get(filePath)?.add({ node, page, filePath });
+      }
+    };
+    
     const observer = new IntersectionObserver(async (entries) => {
       entries.forEach(async (entry) => {
-        if (entry.isIntersecting && !page.loaded) {
-          // 创建 canvas 元素
-          const canvas = document.createElement('canvas');
-          canvas.className = 'thumbnail-canvas';
-          
-          // 清空节点内容并添加 canvas
-          node.innerHTML = '';
-          node.appendChild(canvas);
-          
-          page.canvas = canvas;
-
-          // 从缓存中获取PDF文档
-          let pdfDoc = pdfDocCache.get(filePath);
-          
-          // 如果缓存中没有，检查是否正在加载
-          if (!pdfDoc) {
-            const loadingPromise = pdfLoadingStates.get(filePath);
-            if (loadingPromise) {
-              try {
-                pdfDoc = await loadingPromise;
-              } catch (e) {
-                console.error("等待PDF文档加载失败:", e);
-                // 显示错误状态
-                node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
-                return;
-              }
-            }
-          }
-
-          if (pdfDoc) {
-            try {
-              await loadPdfThumbnail(pdfDoc, page.canvas, page.page_number);
-              page.loaded = true;
-            } catch (e) {
-              console.error("加载缩略图失败:", e);
-              // 显示错误状态
-              node.innerHTML = '<div class="thumbnail-error"><span class="error-text">加载失败</span></div>';
-            }
-          } else {
-            console.warn("PDF文档未找到或未加载:", filePath);
-            // 显示等待状态
-            node.innerHTML = '<div class="thumbnail-waiting"><span class="waiting-text">等待PDF加载...</span></div>';
-          }
+        if (entry.isIntersecting) {
+          await tryLoadThumbnail();
         }
       });
     });
@@ -418,6 +477,15 @@
       destroy() {
         observer.unobserve(node);
         observer.disconnect();
+        
+        // 从等待列表中移除
+        const waitingSet = waitingThumbnails.get(filePath);
+        if (waitingSet) {
+          waitingSet.delete({ node, page, filePath });
+          if (waitingSet.size === 0) {
+            waitingThumbnails.delete(filePath);
+          }
+        }
       },
     };
   }
