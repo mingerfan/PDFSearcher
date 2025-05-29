@@ -10,6 +10,14 @@
 - 🚀 高性能搜索引擎
 - 📄 PDF文件预览
 
+## 界面展示
+![Home](static/readme_asserts/home.png)
+*在主界面中，你可以选择文件夹进行搜索，输入关键词后点击搜索按钮即可开始搜索。*
+
+*搜索结果以缩略图的形式展示，点击缩略图可以查看PDF文件的详细内容。*
+
+![Viewer](static/readme_asserts/viewer.png)
+
 ## 开发环境
 
 [VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
