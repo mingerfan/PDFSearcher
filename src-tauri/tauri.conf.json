@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "PDF搜索工具",
+  "productName": "PDFSearcher",
   "version": "0.1.0",
   "identifier": "com.pdfsearcher-tauri.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "PDF搜索工具",
+        "title": "PDFSearcher",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
