@@ -52,7 +52,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'PDF搜索工具 ${{ github.ref_name }}'
+          releaseName: 'PDFSearcher ${{ github.ref_name }}'
           releaseBody: |
             ## 更新内容
             请查看提交历史了解详细更改。
