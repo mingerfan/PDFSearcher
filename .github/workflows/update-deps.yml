@@ -18,8 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-
+          cache: 'npm'      
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -38,9 +37,11 @@ jobs:
         run: |
           cargo update
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Test after updates
         run: |
-          npm ci
           npm run check
           npm run build
 
