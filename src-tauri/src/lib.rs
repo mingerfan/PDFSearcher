@@ -180,6 +180,27 @@ fn write_cache_to_debug_file() {
     // 在release模式下不执行任何操作
 }
 
+// 清理中文字符间的多余空格
+fn clean_chinese_text(text: &str) -> String {
+    use regex::Regex;
+    
+    // 匹配中文字符间的空格模式
+    // 这个正则表达式匹配：中文字符 + 一个或多个空格 + 中文字符
+    let re = Regex::new(r"([\u4e00-\u9fff])\s+([\u4e00-\u9fff])").unwrap();
+    
+    // 迭代替换所有匹配的模式，直到没有更多匹配为止
+    let mut cleaned = text.to_string();
+    loop {
+        let new_cleaned = re.replace_all(&cleaned, "$1$2").to_string();
+        if new_cleaned == cleaned {
+            break;
+        }
+        cleaned = new_cleaned;
+    }
+    
+    cleaned
+}
+
 // 优化的文本提取函数，带缓存
 fn extract_pdf_text_cached(file_path: &str) -> Result<Vec<String>> {
     // 检查缓存
@@ -192,17 +213,23 @@ fn extract_pdf_text_cached(file_path: &str) -> Result<Vec<String>> {
 
     // 如果没有缓存，提取文本
     let text = extract_pdf_text(file_path)?;
+    
+    // 清理文本：移除中文字符间的多余空格
+    let cleaned_text: Vec<String> = text
+        .into_iter()
+        .map(|page_text| clean_chinese_text(&page_text))
+        .collect();
 
     // 存入缓存（限制缓存大小）
     {
         let mut cache = TEXT_CACHE.write().unwrap();
         if cache.len() < 100 {
             // 限制缓存条目数
-            cache.insert(file_path.to_string(), text.clone());
+            cache.insert(file_path.to_string(), cleaned_text.clone());
         }
     }
 
-    Ok(text)
+    Ok(cleaned_text)
 }
 
 // 快速搜索函数，使用缓存提高性能

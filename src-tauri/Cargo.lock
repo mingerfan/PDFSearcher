@@ -2992,6 +2992,7 @@ dependencies = [
  "pdf",
  "pdf-extract",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

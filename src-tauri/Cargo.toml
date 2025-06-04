@@ -38,3 +38,4 @@ pdf = "0.8"
 base64 = "0.22"
 tauri-plugin-log = "2.4.0"
 chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
