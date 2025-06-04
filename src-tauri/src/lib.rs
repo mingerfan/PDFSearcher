@@ -10,6 +10,9 @@ use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 use tauri::Emitter;
 use walkdir::WalkDir;
+// Debug相关的导入
+use std::fs;
+use std::io::Write;
 
 #[derive(Debug, Serialize, Clone)]
 struct PageInfoMatched {
@@ -105,6 +108,76 @@ fn extract_pdf_text(file_path: &str) -> Result<Vec<String>> {
 // 简单的内存缓存
 lazy_static::lazy_static! {
     static ref TEXT_CACHE: RwLock<HashMap<String, Vec<String>>> = RwLock::new(HashMap::new());
+    static ref FIRST_SEARCH: RwLock<bool> = RwLock::new(true);
+}
+
+// Debug模式下将缓存写入文件的函数
+#[cfg(debug_assertions)]
+fn write_cache_to_debug_file() {
+    let cache = TEXT_CACHE.read().unwrap();
+    if cache.is_empty() {
+        return;
+    }
+
+    // 创建debug目录（在target/debug下）
+    let debug_dir = Path::new("target/debug/pdf_cache_debug");
+    if let Err(e) = fs::create_dir_all(debug_dir) {
+        eprintln!("无法创建debug目录: {}", e);
+        return;
+    }
+
+    // 为每个PDF文件创建一个文本文件
+    for (file_path, pages) in cache.iter() {
+        let file_name = Path::new(file_path)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown")
+            .replace(" ", "_");
+        
+        let output_path = debug_dir.join(format!("{}.txt", file_name));
+        
+        match fs::File::create(&output_path) {
+            Ok(mut file) => {
+                writeln!(file, "PDF文件: {}", file_path).unwrap_or_default();
+                writeln!(file, "总页数: {}", pages.len()).unwrap_or_default();
+                writeln!(file, "提取时间: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")).unwrap_or_default();
+                writeln!(file, "{}", "=".repeat(80)).unwrap_or_default();
+                
+                for (page_num, page_text) in pages.iter().enumerate() {
+                    writeln!(file, "\n--- 第 {} 页 ---", page_num + 1).unwrap_or_default();
+                    writeln!(file, "{}", page_text).unwrap_or_default();
+                    writeln!(file, "{}", "-".repeat(40)).unwrap_or_default();
+                }
+                
+                println!("Debug: 已将PDF文本缓存写入: {:?}", output_path);
+            }
+            Err(e) => {
+                eprintln!("无法创建debug文件 {:?}: {}", output_path, e);
+            }
+        }
+    }
+    
+    // 创建一个汇总文件
+    let summary_path = debug_dir.join("cache_summary.txt");
+    if let Ok(mut summary_file) = fs::File::create(&summary_path) {
+        writeln!(summary_file, "PDF缓存汇总").unwrap_or_default();
+        writeln!(summary_file, "生成时间: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")).unwrap_or_default();
+        writeln!(summary_file, "缓存文件数量: {}", cache.len()).unwrap_or_default();
+        writeln!(summary_file, "{}", "=".repeat(60)).unwrap_or_default();
+          for (file_path, pages) in cache.iter() {
+            writeln!(summary_file, "文件: {}", file_path).unwrap_or_default();
+            writeln!(summary_file, "页数: {}", pages.len()).unwrap_or_default();
+            writeln!(summary_file).unwrap_or_default();
+        }
+        
+        println!("Debug: 已创建缓存汇总文件: {:?}", summary_path);
+    }
+}
+
+// 在非debug模式下，这个函数什么都不做
+#[cfg(not(debug_assertions))]
+fn write_cache_to_debug_file() {
+    // 在release模式下不执行任何操作
 }
 
 // 优化的文本提取函数，带缓存
@@ -188,6 +261,17 @@ async fn search_pdfs(
     let folder_path = config.folder_path.clone();
     let keyword = config.keyword.clone();
 
+    // 检查是否是第一次搜索
+    let is_first_search = {
+        let mut first = FIRST_SEARCH.write().unwrap();
+        if *first {
+            *first = false;
+            true
+        } else {
+            false
+        }
+    };
+
     // 先收集所有PDF文件
     let pdf_files: Vec<_> = WalkDir::new(&folder_path)
         .into_iter()
@@ -228,11 +312,15 @@ async fn search_pdfs(
         if let Some(result) = quick_search_in_pdf(file_path, &keyword) {
             results.lock().unwrap().push(result);
         }
-    });
-
-    // 提取最终结果
+    });    // 提取最终结果
     let mut final_results = results.lock().unwrap().clone();
     final_results.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    
+    // 在第一次搜索完成后，如果是debug模式则写入缓存到文件
+    if is_first_search {
+        write_cache_to_debug_file();
+    }
+    
     Ok(final_results)
 }
 
@@ -243,6 +331,17 @@ async fn search_pdfs_advanced(
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<SearchResult>, String> {
     let folder_path = config.folder_path.clone();
+
+    // 检查是否是第一次搜索
+    let is_first_search = {
+        let mut first = FIRST_SEARCH.write().unwrap();
+        if *first {
+            *first = false;
+            true
+        } else {
+            false
+        }
+    };
 
     // 支持多个关键词，用空格或逗号分隔
     let keywords: Vec<String> = config
@@ -306,10 +405,14 @@ async fn search_pdfs_advanced(
                 break; // 找到匹配就停止，避免重复结果
             }
         }
-    });
-
-    let mut final_results = results.lock().unwrap().clone();
+    });    let mut final_results = results.lock().unwrap().clone();
     final_results.sort_by(|a, b| a.file_path.cmp(&b.file_path));
+    
+    // 在第一次搜索完成后，如果是debug模式则写入缓存到文件
+    if is_first_search {
+        write_cache_to_debug_file();
+    }
+    
     Ok(final_results)
 }
 
